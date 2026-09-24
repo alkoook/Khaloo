@@ -4,6 +4,7 @@ namespace App\Livewire\Invoices\Returns;
 
 use App\Models\Invoice;
 use App\Services\ReturnService;
+use Illuminate\Support\Str;
 use Livewire\Component;
 
 class Create extends Component
@@ -12,9 +13,11 @@ class Create extends Component
     public array $lines = [];
     public array $returnQuantities = [];
     public float $amountPaid = 0;
+    public string $requestKey = '';
 
     public function mount(?Invoice $invoice = null)
     {
+        $this->requestKey = (string) Str::uuid();
         if ($invoice && $invoice->exists) {
             abort_unless($invoice->isSale(), 404);
             $this->invoice = $invoice;
@@ -64,7 +67,8 @@ class Create extends Component
             $returnInvoice = $returnService->processSalesReturn(
                 $this->invoice,
                 (float) $this->amountPaid,
-                $this->returnQuantities
+                $this->returnQuantities,
+                $this->requestKey
             );
 
             return redirect()->route('dashboard')->with('success', 'تم تسجيل المرتجع بنجاح.');

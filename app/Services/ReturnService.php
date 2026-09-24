@@ -8,6 +8,7 @@ use App\Models\LedgerSettlement;
 use App\Models\Product;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ReturnService
 {
@@ -16,19 +17,30 @@ class ReturnService
      * The return invoice is an audit record only. Cash actually handed back is
      * stored as an outgoing settlement so the customer's net paid amount stays correct.
      */
-    public function processSalesReturn(Invoice $originalInvoice, float $refundAmount, array $returnQuantities): Invoice
+    public function processSalesReturn(Invoice $originalInvoice, float $refundAmount, array $returnQuantities, ?string $requestKey = null): Invoice
     {
         if (! $originalInvoice->isSale()) throw new Exception('يمكن إرجاع فواتير المبيعات فقط.');
-        if ($refundAmount < 0) throw new Exception('قيمة الاسترداد لا يمكن أن تكون سالبة.');
+        if (! is_finite($refundAmount) || $refundAmount < 0) throw new Exception('قيمة الاسترداد لا يمكن أن تكون سالبة.');
+        if ($requestKey !== null && ! Str::isUuid($requestKey)) throw new Exception('طلب المرتجع غير صالح.');
+        $refundAmount = round($refundAmount, 2);
 
-        [$invoice, $linesData] = DB::transaction(function () use ($originalInvoice, $refundAmount, $returnQuantities): array {
+        [$invoice, $linesData, $replayed] = DB::transaction(function () use ($originalInvoice, $refundAmount, $returnQuantities, $requestKey): array {
             $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($originalInvoice->id);
+            if ($requestKey !== null) {
+                $existing = Invoice::query()->where('return_request_key', $requestKey)->first();
+                if ($existing) {
+                    if ($existing->original_invoice_id !== $lockedInvoice->id) throw new Exception('طلب المرتجع غير صالح.');
+                    return [$existing, [], true];
+                }
+            }
             $lines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
             $items = [];
             $total = 0.0;
 
             foreach ($lines as $line) {
-                $quantity = (int) ($returnQuantities[$line->id] ?? 0);
+                $rawQuantity = $returnQuantities[$line->id] ?? 0;
+                if (filter_var($rawQuantity, FILTER_VALIDATE_INT) === false) throw new Exception('كمية المرتجع يجب أن تكون عددًا صحيحًا.');
+                $quantity = (int) $rawQuantity;
                 if ($quantity < 0) throw new Exception('كمية المرتجع غير صالحة.');
                 if ($quantity > $line->quantity) throw new Exception("الكمية المرتجعة من {$line->product_name} أكبر من الكمية المتبقية في الفاتورة.");
                 if ($quantity === 0) continue;
@@ -41,13 +53,22 @@ class ReturnService
             $total = round($total, 2);
             if ($refundAmount > $total) throw new Exception('الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
 
+            $debtBefore = max(0, round((float) $lockedInvoice->total - (float) $lockedInvoice->amount_paid, 2));
+            if ($lockedInvoice->partner_id) {
+                $partner = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($lockedInvoice->partner_id);
+                $debtBefore = max(0, round((float) $partner->sales_due - (float) $partner->incoming_total + (float) $partner->outgoing_total, 2));
+            }
+            $maxRefund = max(0, round($total - $debtBefore, 2));
+            if ($refundAmount > $maxRefund) throw new Exception('الاسترداد النقدي أكبر من المبلغ المستحق للعميل بعد تسوية الدين.');
+
             $returnInvoice = Invoice::create([
                 'partner_id' => $lockedInvoice->partner_id,
                 'original_invoice_id' => $lockedInvoice->id,
                 'type' => Invoice::TYPE_RETURN,
                 'total' => $total,
-                'initial_paid' => 0,
-                'amount_paid' => 0,
+                'initial_paid' => $refundAmount,
+                'amount_paid' => $refundAmount,
+                'return_request_key' => $requestKey,
             ]);
 
             $notificationLines = [];
@@ -91,8 +112,10 @@ class ReturnService
                 ]);
             }
 
-            return [$returnInvoice->load('partner'), $notificationLines];
+            return [$returnInvoice->load('partner'), $notificationLines, false];
         });
+
+        if ($replayed) return $invoice;
 
         app(TelegramService::class)->sendInvoiceNotification(
             Invoice::TYPE_RETURN,

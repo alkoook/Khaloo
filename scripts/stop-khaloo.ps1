@@ -27,7 +27,7 @@ function Stop-TrackedProcess([string] $filename, [string] $kind) {
             }
             for ($index = $descendants.Count - 1; $index -ge 0; $index--) {
                 $child = $descendants[$index]
-                if ($child.CommandLine -match [regex]::Escape($projectRoot) -and $child.CommandLine -match 'php(?:\.exe)?\s+-S\s+127\.0\.0\.1:8000') {
+                if ($child.CommandLine -match [regex]::Escape($projectRoot) -and $child.CommandLine -match 'php(?:\.exe)?\s+-S\s+(?:127\.0\.0\.1|0\.0\.0\.0):8000') {
                     Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
                 }
             }

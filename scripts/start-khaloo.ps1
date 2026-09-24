@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $artisanPath = Join-Path $projectRoot 'artisan'
 $runtimePath = Join-Path $projectRoot 'storage\app\runtime'
-$url = 'http://127.0.0.1:8000'
+$HostAddress = '0.0.0.0'
+$Port = 8000
+$url = "http://127.0.0.1:$Port"
 $serverPidPath = Join-Path $runtimePath 'server.pid'
 $queuePidPath = Join-Path $runtimePath 'queue.pid'
 $mutex = New-Object System.Threading.Mutex($false, 'Local\KhalooWindowsLauncher')
@@ -29,6 +31,17 @@ function Test-HttpReady {
     } catch { return $false }
 }
 
+function Get-MobileUrl {
+    try {
+        $addresses = Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred -ErrorAction Stop |
+            Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and (Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue).Status -eq 'Up' } |
+            Sort-Object @{ Expression = { if ($_.InterfaceAlias -match 'Wi-Fi|Wireless|WLAN') { 0 } elseif ($_.InterfaceAlias -match 'Ethernet') { 1 } else { 2 } } }, InterfaceMetric
+        $address = $addresses | Select-Object -First 1
+        if ($address) { return "http://$($address.IPAddress):$Port" }
+    } catch {}
+    return $null
+}
+
 try {
     if (-not $mutex.WaitOne(30000)) { exit 1 }
     Set-Location -LiteralPath $projectRoot
@@ -53,7 +66,7 @@ try {
             Show-LaunchError ([regex]::Unescape('\u0627\u0644\u0645\u0646\u0641\u0630 8000 \u0645\u0633\u062a\u062e\u062f\u0645 \u0628\u0648\u0627\u0633\u0637\u0629 \u062a\u0637\u0628\u064a\u0642 \u0622\u062e\u0631. \u0623\u063a\u0644\u0642\u0647 \u062b\u0645 \u0623\u0639\u062f \u062a\u0634\u063a\u064a\u0644 Khaloo.'))
             exit 1
         }
-        $server = Start-Process -FilePath $phpPath -ArgumentList ('"{0}" serve --host=127.0.0.1 --port=8000' -f $artisanPath) -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runtimePath 'server.out.log') -RedirectStandardError (Join-Path $runtimePath 'server.err.log')
+        $server = Start-Process -FilePath $phpPath -ArgumentList ('"{0}" serve --host={1} --port={2}' -f $artisanPath, $HostAddress, $Port) -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runtimePath 'server.out.log') -RedirectStandardError (Join-Path $runtimePath 'server.err.log')
     }
     Set-Content -LiteralPath $serverPidPath -Value $(if ($server -is [System.Diagnostics.Process]) { $server.Id } else { $server.ProcessId }) -Encoding Ascii
 
@@ -72,6 +85,8 @@ try {
         Show-LaunchError ([regex]::Unescape('\u0644\u0645 \u064a\u0628\u062f\u0623 \u062e\u0627\u062f\u0645 Khaloo. \u062a\u062d\u0642\u0642 \u0645\u0646 \u0645\u0644\u0641\u0627\u062a \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0641\u064a storage/app/runtime.'))
         exit 1
     }
+    $mobileUrl = Get-MobileUrl
+    if ($mobileUrl) { Set-Content -LiteralPath (Join-Path $runtimePath 'mobile-url.txt') -Value $mobileUrl -Encoding Ascii }
     Start-Process $url
 } catch {
     try { Set-Content -LiteralPath (Join-Path $runtimePath 'launcher.err.log') -Value $_.Exception.Message -Encoding UTF8 } catch {}

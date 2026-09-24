@@ -72,3 +72,15 @@ test('Thursday reminder is created once and stays dismissed after reading', func
     $this->get(route('dashboard'))->assertOk();
     expect(InAppNotification::query()->where('type', 'backup_reminder')->count())->toBe(2);
 });
+
+test('Thursday reminder has a visible dismissible banner without creating another reminder', function () {
+    $this->travelTo(Carbon::parse('2026-09-24 10:00:00'));
+    $admin = User::factory()->create(['is_admin' => true]);
+    $this->actingAs($admin)->get(route('dashboard'))->assertOk()->assertSee('backup-reminder', false)->assertSee('إغلاق تذكير النسخ الاحتياطي');
+    $reminder = InAppNotification::query()->where('type', 'backup_reminder')->sole();
+
+    $this->post(route('notifications.backup-dismiss', $reminder))->assertRedirect();
+    $this->get(route('dashboard'))->assertOk()->assertDontSee('إغلاق تذكير النسخ الاحتياطي');
+    expect($reminder->fresh()->read_at)->not->toBeNull()
+        ->and(InAppNotification::query()->where('type', 'backup_reminder')->count())->toBe(1);
+});

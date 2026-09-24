@@ -55,6 +55,9 @@ class FinancialService
 
     public function payable(Partner $partner): float
     {
+        if ($partner->isCustomer()) {
+            return max(0, round((float) $partner->incoming_total - (float) $partner->sales_due - (float) $partner->outgoing_total, 2));
+        }
         if (! $partner->isSupplier()) return 0.0;
         return max(0, round((float) $partner->purchases_due - (float) $partner->outgoing_total + (float) $partner->incoming_total, 2));
     }

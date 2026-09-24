@@ -21,6 +21,7 @@ class Invoice extends Model
         'total',
         'initial_paid',
         'amount_paid',
+        'return_request_key',
     ];
 
     protected function casts(): array

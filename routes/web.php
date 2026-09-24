@@ -64,6 +64,11 @@ Route::middleware(['auth', \App\Http\Middleware\EnsureWeeklyBackupReminder::clas
     Route::get('/quotations', \App\Livewire\Quotations\Index::class)->name('quotations.index');
     Route::get('/quotations/{quotation}/print', [\App\Http\Controllers\QuotationController::class, 'print'])->name('quotations.print');
     Route::get('/notifications', \App\Livewire\Notifications\Index::class)->name('notifications.index');
+    Route::post('/notifications/backup-reminder/{notification}/dismiss', function (\App\Models\InAppNotification $notification) {
+        abort_unless($notification->type === 'backup_reminder', 404);
+        $notification->markRead();
+        return back();
+    })->name('notifications.backup-dismiss');
     Route::post('/notifications/read-all', function () {
         \App\Models\InAppNotification::query()->whereNull('read_at')->update(['read_at' => now()]);
         return back();

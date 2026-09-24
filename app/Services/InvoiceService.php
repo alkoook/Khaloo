@@ -18,6 +18,9 @@ class InvoiceService
 
         $updated = DB::transaction(function () use ($invoice, $newLines, $newAmountPaid): Invoice {
             $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+            if ($lockedInvoice->isSale() && $lockedInvoice->returns()->exists()) {
+                throw new Exception('لا يمكن تعديل فاتورة بيع لها مرتجعات مسجلة.');
+            }
             $oldLines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
             $productIds = collect($newLines)->pluck('product_id')->merge($oldLines->pluck('product_id'))->filter()->unique();
             $products = Product::query()->whereIn('id', $productIds)->lockForUpdate()->get()->keyBy('id');

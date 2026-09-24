@@ -42,7 +42,7 @@ test('later settlement and partial return produce one authoritative receivable',
 });
 
 test('cash refund is recorded and does not throw a missing column exception', function () {
-    ['partner'=>$partner,'invoice'=>$invoice,'line'=>$line] = saleFixture(50);
+    ['partner'=>$partner,'invoice'=>$invoice,'line'=>$line] = saleFixture(100);
     $return = app(ReturnService::class)->processSalesReturn($invoice, 20, [$line->id => 2]);
     expect($return->isReturn())->toBeTrue()
         ->and(LedgerSettlement::where('partner_id',$partner->id)->where('type','outgoing')->sum('amount'))->toEqual(20);
