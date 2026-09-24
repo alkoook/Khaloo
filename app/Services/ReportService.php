@@ -10,6 +10,7 @@ use App\Models\Partner;
 use App\Models\Product;
 use App\Models\Quotation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -27,9 +28,37 @@ class ReportService
 
     public function preview(string $type, array $filters): array
     {
-        if ($type === 'master') return ['count' => collect(array_keys(self::TYPES))->reject(fn ($t) => $t === 'master')->sum(fn ($t) => count($this->rows($t, $filters)[1])), 'total' => null, 'filters'=>$this->filterLabels($filters), 'title'=>$this->reportTitle($type,$filters)];
-        [$headers, $rows] = $this->rows($type, $filters);
-        return ['count' => count($rows), 'total' => $this->totalFor($type, $rows), 'filters'=>$this->filterLabels($filters), 'title'=>$this->reportTitle($type,$filters)];
+        $from = $filters['from'] ?? null;
+        $to = $filters['to'] ?? null;
+        $partner = $filters['partner_id'] ?? null;
+        $category = $filters['category_id'] ?? null;
+        $count = null;
+        $total = null;
+
+        if (in_array($type, ['sales', 'purchases', 'returns'], true)) {
+            $invoiceType = ['sales'=>Invoice::TYPE_SALE,'purchases'=>Invoice::TYPE_PURCHASE,'returns'=>Invoice::TYPE_RETURN][$type];
+            $query = Invoice::query()->where('type', $invoiceType)
+                ->when($partner, fn ($q) => $q->where('partner_id', $partner))
+                ->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)))
+                ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
+            $count = $query->count();
+            $total = (float) $query->sum('total');
+        } elseif ($type === 'inventory') {
+            $count = Product::query()->when($category, fn ($q) => $q->where('category_id', $category))->count();
+        } elseif ($type === 'partners') {
+            $count = Partner::query()->when($partner, fn ($q) => $q->whereKey($partner))->count();
+        } elseif ($type === 'payments') {
+            $count = LedgerSettlement::query()->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($from, fn ($q) => $q->whereDate('settlement_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('settlement_date', '<=', $to))->count();
+        } elseif ($type === 'quotations') {
+            $count = Quotation::query()->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)))->when($from, fn ($q) => $q->whereDate('quotation_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('quotation_date', '<=', $to))->count();
+        } elseif ($type === 'expenses') {
+            $count = DB::table('expenses')->when($from, fn ($q) => $q->whereDate('date', '>=', $from))->when($to, fn ($q) => $q->whereDate('date', '<=', $to))->count();
+        } elseif ($type === 'notifications') {
+            $count = InAppNotification::query()->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))->count();
+        }
+
+        return ['count' => $count, 'total' => $total, 'filters'=>$this->filterLabels($filters), 'title'=>$this->reportTitle($type,$filters)];
     }
 
     public function filterLabels(array $filters): array
@@ -84,7 +113,7 @@ class ReportService
             if (in_array($sheetType, ['sales', 'purchases', 'returns'], true)) $this->appendInvoiceLinesSheet($spreadsheet, $sheetType, $filters);
         }
         $spreadsheet->setActiveSheetIndex(0);
-        $path = $this->path($this->reportTitle($type,$filters).'-'.now()->format('Ymd-His').'.xlsx');
+        $path = $this->path($this->reportTitle($type,$filters).'-'.Str::ulid().'.xlsx');
         (new Xlsx($spreadsheet))->save($path);
         $spreadsheet->disconnectWorksheets();
         return $path;
@@ -123,7 +152,7 @@ class ReportService
         $sheet->fromArray(['التاريخ','المرجع','البيان','مدين','دائن','الرصيد'], null, 'A3');
         if ($rows) $sheet->fromArray($rows, null, 'A4');
         $this->style($sheet, 6, count($rows) + 3, 3);
-        $path = $this->path($statementTitle.'-'.now()->format('Ymd-His').'.xlsx');
+        $path = $this->path($statementTitle.'-'.Str::ulid().'.xlsx');
         (new Xlsx($spreadsheet))->save($path); $spreadsheet->disconnectWorksheets();
         return $path;
     }

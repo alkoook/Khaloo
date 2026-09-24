@@ -20,7 +20,7 @@ class TelegramService
             if (! $response->successful()) Log::warning('Telegram rejected a message.', ['status' => $response->status()]);
             return $response->successful();
         } catch (\Throwable $exception) {
-            Log::warning('Telegram message failed.', ['message' => $exception->getMessage()]);
+            Log::warning('Telegram message failed.', ['exception' => $exception::class]);
             return false;
         }
     }
@@ -36,7 +36,7 @@ class TelegramService
                 ->post("https://api.telegram.org/bot{$token}/sendDocument", ['chat_id' => $chatId, 'caption' => $caption])
                 ->successful();
         } catch (\Throwable $exception) {
-            Log::warning('Telegram document failed.', ['message' => $exception->getMessage()]);
+            Log::warning('Telegram document failed.', ['exception' => $exception::class]);
             return false;
         }
     }

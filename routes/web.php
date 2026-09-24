@@ -21,12 +21,13 @@ Route::middleware('guest')->group(function (): void {
 
 Route::post('/logout', LogoutController::class)->name('logout')->middleware('auth');
 
-Route::middleware(['auth'])->group(function (): void {
+Route::middleware(['auth', \App\Http\Middleware\EnsureWeeklyBackupReminder::class])->group(function (): void {
     Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
     Route::get('/message-to-you', \App\Livewire\MessageToYou::class)->name('message-to-you');
 
     Route::get('/profile', \App\Livewire\Profile\Edit::class)->name('profile.edit');
     Route::get('/admin/settings', \App\Livewire\Settings\Index::class)->name('settings.index');
+    Route::post('/admin/settings/database-backup', \App\Http\Controllers\DatabaseBackupController::class)->name('settings.database-backup');
 
     Route::view('/categories', 'categories.index')->name('categories.index');
     Route::view('/categories/create', 'categories.create')->name('categories.create');
@@ -68,6 +69,7 @@ Route::middleware(['auth'])->group(function (): void {
         return back();
     })->name('notifications.read-all');
     Route::get('/reports', \App\Livewire\Reports\Index::class)->name('reports.index');
+    Route::get('/reports/exports/{export}', \App\Http\Controllers\ReportExportController::class)->name('reports.exports.download');
 
     Route::post('/telegram/send-invoice', [\App\Http\Controllers\TelegramController::class, 'sendInvoice'])->name('telegram.send-invoice');
     Route::post('/telegram/send-ledger', [\App\Http\Controllers\TelegramController::class, 'sendLedger'])->name('telegram.send-ledger');

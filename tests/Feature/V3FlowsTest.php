@@ -126,9 +126,11 @@ test('sales reports apply partner and category to data title summary and detail 
     $partner = Partner::query()->create(['name'=>'أحمد الحسن','type'=>Partner::TYPE_CUSTOMER]);
     $otherPartner = Partner::query()->create(['name'=>'طرف مستبعد','type'=>Partner::TYPE_CUSTOMER]);
     $invoice = Invoice::query()->create(['partner_id'=>$partner->id,'type'=>Invoice::TYPE_SALE,'total'=>18,'initial_paid'=>18,'amount_paid'=>18,'created_at'=>'2026-08-12 10:00:00']);
+    $invoice->forceFill(['created_at'=>'2026-08-12 10:00:00'])->save();
     InvoiceLine::query()->create(['invoice_id'=>$invoice->id,'product_id'=>$product->id,'product_name'=>$product->name,'quantity'=>1,'unit_price'=>10,'purchase_price'=>5,'line_total'=>10]);
     InvoiceLine::query()->create(['invoice_id'=>$invoice->id,'product_id'=>$otherProduct->id,'product_name'=>$otherProduct->name,'quantity'=>1,'unit_price'=>8,'purchase_price'=>4,'line_total'=>8]);
     $excluded = Invoice::query()->create(['partner_id'=>$otherPartner->id,'type'=>Invoice::TYPE_SALE,'total'=>10,'initial_paid'=>10,'amount_paid'=>10,'created_at'=>'2026-08-13 10:00:00']);
+    $excluded->forceFill(['created_at'=>'2026-08-13 10:00:00'])->save();
     InvoiceLine::query()->create(['invoice_id'=>$excluded->id,'product_id'=>$product->id,'product_name'=>$product->name,'quantity'=>1,'unit_price'=>10,'purchase_price'=>5,'line_total'=>10]);
 
     $filters=['from'=>'2026-08-01','to'=>'2026-08-30','partner_id'=>$partner->id,'category_id'=>$category->id];

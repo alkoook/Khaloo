@@ -11,15 +11,26 @@
                 <label>التصنيف<select wire:model.live="category_id"><option value="">كل التصنيفات</option>@foreach($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></label>
             </div>
             @error('to')<small class="field-error">{{ $message }}</small>@enderror
-            <button type="button" class="primary-button export-button" wire:click="download" wire:loading.attr="disabled"><span>↓</span> تنزيل تقرير {{ $types[$type] }}</button>
+            <button type="button" class="primary-button export-button" wire:click="download" wire:loading.attr="disabled"><span>↓</span> إنشاء تقرير {{ $types[$type] }} في الخلفية</button>
         </section>
         <aside class="workspace-card report-preview">
             <span class="eyebrow">معاينة التقرير</span><h2>{{ $preview['title'] }}</h2>
-            <div class="preview-metric"><small>عدد السجلات</small><strong>{{ number_format($preview['count']) }}</strong></div>
+            <div class="preview-metric"><small>عدد السجلات</small><strong>{{ $preview['count'] === null ? 'يُحسب في الخلفية' : number_format($preview['count']) }}</strong></div>
             <div class="preview-metric"><small>الإجمالي</small><strong>{{ $preview['total'] === null ? 'غير مطبق' : number_format($preview['total'],2) }}</strong></div>
             <div class="applied-filters"><strong>الفلاتر المطبقة</strong>@foreach($preview['filters'] as $label=>$value)<div><span>{{ $label }}</span><b>{{ $value }}</b></div>@endforeach</div>
             <p>يتضمن الملف اسم التقرير والمنشأة ووقت الإنشاء والفلاتر المطبقة، مع اتجاه عربي وتجميد للرؤوس وصفوف قابلة للفرز.</p>
         </aside>
     </div>
-    <section class="workspace-card statement-builder"><div><span class="eyebrow">كشف الحساب</span><h2>كشف حساب عميل أو مورد</h2><p>نزّل ملف إكسل داخل النظام، أو أرسل ملخصًا والحركات الأخيرة إلى تيليغرام كرسالة نصية.</p></div><select wire:model="partner_id"><option value="">اختر الطرف</option>@foreach($partners as $partner)<option value="{{ $partner->id }}">{{ $partner->name }}</option>@endforeach</select><button type="button" class="secondary-button" wire:click="downloadStatement">تنزيل كشف إكسل</button><button type="button" class="primary-button" wire:click="sendStatement">إرسال رسالة إلى تيليغرام</button>@error('partner_id')<small class="field-error">{{ $message }}</small>@enderror @error('telegram')<small class="field-error">{{ $message }}</small>@enderror</section>
+    <section class="workspace-card statement-builder"><div><span class="eyebrow">كشف الحساب</span><h2>كشف حساب عميل أو مورد</h2><p>اطلب ملف إكسل في الخلفية، أو أرسل ملخصًا والحركات الأخيرة إلى تيليغرام كرسالة نصية.</p></div><select wire:model="partner_id"><option value="">اختر الطرف</option>@foreach($partners as $partner)<option value="{{ $partner->id }}">{{ $partner->name }}</option>@endforeach</select><button type="button" class="secondary-button" wire:click="downloadStatement" wire:loading.attr="disabled">إنشاء كشف إكسل</button><button type="button" class="primary-button" wire:click="sendStatement">إرسال رسالة إلى تيليغرام</button>@error('partner_id')<small class="field-error">{{ $message }}</small>@enderror @error('telegram')<small class="field-error">{{ $message }}</small>@enderror</section>
+    <section class="workspace-card report-queue" wire:poll.5s aria-live="polite">
+        <div class="card-heading"><div><h2>ملفات التقارير</h2><p>تابع حالة التقارير المطلوبة وحمّل الملفات الجاهزة من هنا.</p></div></div>
+        @forelse($exports as $export)
+            <div class="report-queue-row" wire:key="report-export-{{ $export->id }}">
+                <div><strong>{{ $export->title }}</strong><small>{{ $export->created_at->format('Y-m-d H:i') }}</small></div>
+                @if($export->status === 'ready')<a class="secondary-button" href="{{ route('reports.exports.download', $export) }}">تنزيل إكسل</a>
+                @elseif($export->status === 'failed')<span class="report-queue-status failed">تعذر إنشاء الملف؛ يمكن طلبه مجددًا</span>
+                @else<span class="report-queue-status">{{ $export->status === 'processing' ? 'قيد الإنشاء' : 'بانتظار المعالجة' }}</span>@endif
+            </div>
+        @empty<div class="empty-state">لم تطلب أي تقرير بعد.</div>@endforelse
+    </section>
 </div>

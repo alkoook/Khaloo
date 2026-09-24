@@ -4,6 +4,8 @@ namespace App\Livewire\Reports;
 
 use App\Models\Category;
 use App\Models\Partner;
+use App\Models\ReportExport;
+use App\Jobs\GenerateReportExport;
 use App\Services\ReportService;
 use App\Services\TelegramService;
 use Livewire\Component;
@@ -16,18 +18,30 @@ class Index extends Component
     public ?int $partner_id = null;
     public ?int $category_id = null;
 
-    public function download(ReportService $reports)
+    public function download(ReportService $reports): void
     {
         $this->validateFilters();
-        $path = $reports->export($this->type, $this->filters());
-        return response()->download($path, basename($path))->deleteFileAfterSend(true);
+        $export = ReportExport::query()->create([
+            'user_id' => auth()->id(), 'kind' => 'report', 'report_type' => $this->type,
+            'filters' => $this->filters(), 'title' => $reports->reportTitle($this->type, $this->filters()),
+        ]);
+        GenerateReportExport::dispatch($export->id)->onConnection('database')->afterCommit();
+        session()->flash('success', 'أُضيف التقرير إلى قائمة المعالجة. سيظهر رابط التنزيل هنا عند اكتماله.');
     }
 
-    public function downloadStatement(ReportService $reports)
+    public function downloadStatement(): void
     {
         $this->validate(['partner_id' => ['required', 'exists:partners,id'], 'from' => ['nullable','date'], 'to' => ['nullable','date','after_or_equal:from']]);
-        $path = $reports->statement(Partner::query()->findOrFail($this->partner_id), $this->from ?: null, $this->to ?: null);
-        return response()->download($path, basename($path))->deleteFileAfterSend(true);
+        $partner = Partner::query()->findOrFail($this->partner_id);
+        $from = $this->from ?: null;
+        $to = $this->to ?: null;
+        $export = ReportExport::query()->create([
+            'user_id' => auth()->id(), 'kind' => 'statement', 'partner_id' => $partner->id,
+            'filters' => ['from' => $from, 'to' => $to],
+            'title' => 'كشف حساب '.($partner->isCustomer() ? 'العميل ' : 'المورد ').$partner->name.' من '.($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم'),
+        ]);
+        GenerateReportExport::dispatch($export->id)->onConnection('database')->afterCommit();
+        session()->flash('success', 'أُضيف كشف الحساب إلى قائمة المعالجة.');
     }
 
     public function sendStatement(ReportService $reports, TelegramService $telegram): void
@@ -45,6 +59,7 @@ class Index extends Component
             'types' => ReportService::TYPES, 'preview' => $preview,
             'partners' => Partner::query()->orderBy('name')->get(['id','name','type']),
             'categories' => Category::query()->orderBy('name')->get(['id','name']),
+            'exports' => ReportExport::query()->where('user_id', auth()->id())->latest()->limit(10)->get(),
         ])->layout('layouts.app', ['title' => 'منشئ التقارير']);
     }
 
