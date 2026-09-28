@@ -66,7 +66,7 @@ class Index extends Component
     public function testTelegram(TelegramService $telegram): void { $ok=$telegram->sendMessage('✅ اتصال Khaloo مع Telegram يعمل بنجاح.'); $this->dispatch('flash',message:$ok?'تم إرسال رسالة الاختبار.':'تعذر الاتصال. راجع الإعدادات.',type:$ok?'success':'error'); }
     public function saveBranding(SettingsService $settings): void
     {
-        $this->validate(['logo'=>['nullable','image','max:2048'],'favicon'=>['nullable','image','max:1024'],'invoice_logo'=>['nullable','image','max:2048']]); foreach(['logo','favicon','invoice_logo'] as $key){if(!$this->{$key})continue;$old=$settings->get($key);$path=$this->{$key}->store('branding','public');$settings->set($key,$path,'branding');if($old&&str_starts_with($old,'branding/'))Storage::disk('public')->delete($old);$this->{$key.'_path'}=$path;$this->reset($key);} $this->saved();
+        $this->validate(['logo'=>['nullable','image','max:10240'],'favicon'=>['nullable','image','max:10240'],'invoice_logo'=>['nullable','image','max:10240']]); foreach(['logo','favicon','invoice_logo'] as $key){if(!$this->{$key})continue;$old=$settings->get($key);$path=$this->{$key}->store('branding','public');$settings->set($key,$path,'branding');if($old&&str_starts_with($old,'branding/'))Storage::disk('public')->delete($old);$this->{$key.'_path'}=$path;$this->reset($key);} $this->saved();
     }
     private function saved(): void { $this->dispatch('flash',message:'تم حفظ الإعدادات.',type:'success'); }
     public function render(){return view('livewire.settings.index');}

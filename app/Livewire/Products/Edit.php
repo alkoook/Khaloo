@@ -56,7 +56,7 @@ class Edit extends Component
             'quantity' => ['required', 'integer', 'min:0'],
             'alert_stock_at' => ['required', 'integer', 'min:0', 'max:100000000'],
             'country_origin' => ['nullable', 'string', 'max:255'],
-            'image' => ['nullable', 'image', 'max:2048'],
+            'image' => ['nullable', 'image', 'max:10240'],
         ]);
 
         if ($this->product->invoiceLines()->exists() && $this->quantity !== $this->product->quantity) {

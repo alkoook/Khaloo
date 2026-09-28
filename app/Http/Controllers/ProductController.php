@@ -53,7 +53,7 @@ class ProductController extends Controller
             'sale_price' => ['nullable', 'numeric', 'min:0'],
             'quantity' => ['required', 'integer', 'min:0'],
             'country_origin' => ['nullable', 'string', 'max:255'],
-            'image' => ['nullable', 'image', 'max:2048'],
+            'image' => ['nullable', 'image', 'max:10240'],
         ]);
 
         $data = [

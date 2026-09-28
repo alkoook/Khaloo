@@ -26,11 +26,11 @@
         <main class="receipt receipt--{{ $width }}" aria-label="{{ $typeLabel }} {{ $invoiceNumber }}">
             <header class="receipt-header">
                 <div class="receipt-brand">
-                    @if($settings->get('receipt_show_logo', true) && $logo)
+                     @if($settings->get('receipt_show_logo', true) && $logo)
                         <img class="receipt-brand__logo" src="{{ Storage::url($logo) }}" alt="شعار {{ $companyName }}">
-                    @else
+                    {{-- @else
                         <span class="receipt-brand__mark" aria-hidden="true">{{ mb_substr($companyName, 0, 1) }}</span>
-                    @endif
+                  --}}   @endif
                     <div class="receipt-brand__copy">@if($settings->get('receipt_show_company', true))<h1>{{ $companyName }}</h1>@endif</div>
                 </div>
                 <div class="receipt-kind"><span>مستند مالي</span><strong>{{ $typeLabel }}</strong></div>

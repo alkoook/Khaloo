@@ -33,7 +33,5 @@ class DatabaseSeeder extends Seeder
             'notify_payable'=>['1','boolean','alerts'], 'receivable_alert_threshold'=>['100','integer','alerts'],
             'payable_alert_threshold'=>['250','integer','alerts'], 'telegram_alerts'=>['1','boolean','telegram'],
         ] as $key=>$value) Setting::query()->updateOrCreate(['key'=>$key],['value'=>$value[0],'type'=>$value[1],'group'=>$value[2]]);
-
-        $this->call(DemoDataSeeder::class);
     }
 }

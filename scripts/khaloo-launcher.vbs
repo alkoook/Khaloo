@@ -1,4 +1,7 @@
 Set shell = CreateObject("WScript.Shell")
 Set files = CreateObject("Scripting.FileSystemObject")
-scriptPath = files.BuildPath(files.GetParentFolderName(WScript.ScriptFullName), "start-khaloo.ps1")
+scriptsPath = files.GetParentFolderName(WScript.ScriptFullName)
+projectRoot = files.GetParentFolderName(scriptsPath)
+scriptPath = files.BuildPath(scriptsPath, "start-khaloo.ps1")
+shell.CurrentDirectory = projectRoot
 shell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & scriptPath & """", 0, False

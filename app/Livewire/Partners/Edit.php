@@ -55,7 +55,7 @@ class Edit extends Component
             'national_id' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:40'],
             'type' => ['required', 'in:customer,supplier'],
-            'image' => ['nullable', 'image', 'max:2048'],
+            'image' => ['nullable', 'image', 'max:10240'],
         ]);
 
         $data = [
