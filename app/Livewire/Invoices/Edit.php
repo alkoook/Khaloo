@@ -13,6 +13,7 @@ class Edit extends Component
     public array $lines = [];
     public float $amountPaid = 0;
     public array $products = [];
+    public string $productSearch = '';
 
     protected $rules = [
         'amountPaid' => 'required|numeric|min:0',
@@ -49,6 +50,29 @@ class Edit extends Component
             'unit_price' => 0,
             'sale_price' => '',
         ];
+    }
+
+    public function selectProduct(int $id): void
+    {
+        $product = Product::query()->findOrFail($id);
+
+        foreach ($this->lines as $index => $line) {
+            if ((int) ($line['product_id'] ?? 0) === $id) {
+                $this->lines[$index]['quantity'] = (int) ($line['quantity'] ?? 0) + 1;
+                $this->productSearch = '';
+                $this->dispatch('focus-product-search');
+                return;
+            }
+        }
+
+        $this->lines[] = [
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'unit_price' => $this->invoice->isSale() ? $product->sale_price : $product->purchase_price,
+            'sale_price' => $product->sale_price,
+        ];
+        $this->productSearch = '';
+        $this->dispatch('focus-product-search');
     }
 
     public function removeLine($index)
@@ -97,7 +121,18 @@ class Edit extends Component
 
     public function render()
     {
-        return view('livewire.invoices.edit')
+        $term = trim($this->productSearch);
+
+        return view('livewire.invoices.edit', [
+            'productResults' => $term === '' ? collect() : Product::query()
+                ->with('category:id,name')
+                ->where(fn ($query) => $query->where('name', 'like', "%{$term}%")
+                    ->when(is_numeric($term), fn ($query) => $query->orWhere($query->qualifyColumn('id'), (int) $term))
+                    ->orWhereHas('category', fn ($category) => $category->where('name', 'like', "%{$term}%")))
+                ->orderBy('name')
+                ->limit(15)
+                ->get(),
+        ])
             ->layout('layouts.app')
             ->title('تعديل فاتورة');
     }

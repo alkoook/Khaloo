@@ -59,6 +59,7 @@
                     <option value="incoming">وارد (اللي النا) — من زبون</option>
                     <option value="outgoing">صادر (اللي علينا) — لمورد</option>
                 </select>
+                <p class="mt-1 text-xs" style="color: var(--app-muted);">الدفع الصادر يُستخدم لتسديد مورد أو لرد مبلغ مستحق لعميل؛ ولا يمكن أن يتجاوز الرصيد المستحق.</p>
             </div>
             <div>
                 <label for="partnerId" class="block text-sm font-medium mb-1">{{ $settlementType === 'incoming' ? 'الزبون' : 'المورد' }} *</label>

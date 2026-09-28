@@ -84,11 +84,13 @@ test('unpaid refund remains visible as customer credit until cash is handed back
     $row = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($partner->id);
     expect(app(FinancialService::class)->receivable($row))->toBe(0.0)
         ->and(app(FinancialService::class)->payable($row))->toBe(20.0)
+        ->and(app(FinancialService::class)->signedBalance($row))->toBe(-20.0)
         ->and(LedgerSettlement::query()->where('type', 'outgoing')->count())->toBe(0);
 
     LedgerSettlement::query()->create(['partner_id' => $partner->id, 'amount' => 20, 'type' => 'outgoing', 'settlement_date' => now()->toDateString()]);
     $row = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($partner->id);
-    expect(app(FinancialService::class)->payable($row))->toBe(0.0);
+    expect(app(FinancialService::class)->payable($row))->toBe(0.0)
+        ->and(app(FinancialService::class)->signedBalance($row))->toBe(0.0);
 });
 
 test('multiple returns cannot exceed sold quantity or repeat the same cash refund', function () {

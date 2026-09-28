@@ -9,14 +9,14 @@ use Illuminate\View\View;
 
 class InvoiceController extends Controller
 {
-    public function show(Invoice $invoice, FinancialService $financials): View
+    public function show(Invoice $invoice, FinancialService $financials, SettingsService $settings): View
     {
         $invoice->load(['partner','lines','returns']);
         $expectedType=str_contains(request()->path(),'sales')?Invoice::TYPE_SALE:Invoice::TYPE_PURCHASE;
         abort_if($invoice->type!==$expectedType&&$invoice->type!==Invoice::TYPE_RETURN,404);
         $partner=$invoice->partner_id?$financials->partnerBalancesQuery()->find($invoice->partner_id):null;
         $balance=$partner?$financials->balanceFor($partner,$invoice->isPurchase()?'payable':'receivable'):0;
-        return view('invoices.show',['invoice'=>$invoice,'currentPartnerBalance'=>$balance]);
+        return view('invoices.show',['invoice'=>$invoice,'currentPartnerBalance'=>$balance,'settings'=>$settings]);
     }
 
     public function receipt(Invoice $invoice, SettingsService $settings): View

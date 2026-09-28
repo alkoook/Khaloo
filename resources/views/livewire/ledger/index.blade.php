@@ -22,6 +22,7 @@
                 اللي علينا
             </button>
         </div>
+        <small style="color: var(--app-muted);">{{ $tab === 'receivable' ? 'مبالغ باقية لنا لدى العملاء بعد المقبوضات.' : 'مبالغ مستحقة للموردين أو للعملاء عند وجود رصيد لهم.' }}</small>
             <form method="get" action="{{ route('ledger.index') }}" class="inline">
                 <input type="hidden" name="open_modal" value="1">
                 <button type="submit" class="px-4 py-2 rounded-lg text-sm font-medium text-white" style="background: var(--app-primary);">إضافة دفعة</button>

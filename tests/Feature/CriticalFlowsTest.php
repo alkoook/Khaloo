@@ -81,7 +81,67 @@ test('theme setting persists through the livewire settings screen', function () 
 test('pos receipt uses the persisted interface font with a safe fallback', function () {
     $user=User::factory()->create(['is_admin'=>true]); ['invoice'=>$invoice]=saleFixture();
     Setting::query()->updateOrCreate(['key'=>'font_family'], ['value'=>'reem-kufi','type'=>'string','group'=>'appearance']);
-    $this->actingAs($user)->get(route('invoices.receipt',$invoice))->assertOk()->assertSee('font-family:"Reem Kufi", Tahoma, Arial, sans-serif', false);
+    $this->actingAs($user)->get(route('invoices.receipt',$invoice))->assertOk()->assertSee('--receipt-font:"Reem Kufi", Tahoma, Arial, sans-serif', false);
+});
+
+test('receipt width accepts only 72mm or 80mm and renders the selected print width', function () {
+    $user = User::factory()->create(['is_admin' => true]);
+    ['invoice' => $invoice] = saleFixture();
+
+    Livewire::actingAs($user)->test(SettingsIndex::class)
+        ->set('receipt_width', '72')
+        ->call('savePrinting')
+        ->assertHasNoErrors();
+
+    expect(Setting::query()->where('key', 'receipt_width')->value('value'))->toBe('72');
+    $this->actingAs($user)->get(route('invoices.receipt', $invoice))
+        ->assertOk()
+        ->assertSee('--receipt-width:72mm', false)
+        ->assertSee('receipt--72', false);
+
+    Livewire::actingAs($user)->test(SettingsIndex::class)
+        ->set('receipt_width', '58')
+        ->call('savePrinting')
+        ->assertHasErrors(['receipt_width']);
+});
+
+test('thermal receipt renders dynamic company facts and the invoice number fallback', function () {
+    $user = User::factory()->create(['is_admin' => true]);
+    ['invoice' => $invoice, 'partner' => $partner] = saleFixture();
+    $partner->update(['phone' => '0991234567', 'address' => 'عربين']);
+
+    $settings = app(\App\Services\SettingsService::class);
+    $settings->set('company_name', 'شركة خلو التجريبية');
+    $settings->set('company_phone', '0932222981');
+    $settings->set('company_address', 'ريف دمشق - شارع الصاغة');
+
+    $this->actingAs($user)->get(route('invoices.receipt', $invoice))
+        ->assertOk()
+        ->assertSee('receipt-header', false)
+        ->assertSee('شركة خلو التجريبية')
+        ->assertSee('0932222981')
+        ->assertSee($partner->name)
+        ->assertDontSee('ريف دمشق - شارع الصاغة')
+        ->assertDontSee('0991234567')
+        ->assertSee('#'.$invoice->id)
+        ->assertSee($invoice->created_at->format('Y-m-d H:i'));
+});
+
+test('invoice product selection clears search and keeps the keyboard focus event for sales and purchases', function () {
+    $user = User::factory()->create(['is_admin' => true]);
+    $category = Category::create(['name' => 'تصنيف البحث']);
+    $product = Product::create(['category_id' => $category->id, 'name' => 'منتج لوحة المفاتيح', 'quantity' => 12, 'purchase_price' => 4, 'sale_price' => 8]);
+
+    foreach ([\App\Livewire\Invoices\Sales\Create::class, \App\Livewire\Invoices\Purchases\Create::class] as $component) {
+        Livewire::actingAs($user)->test($component)
+            ->set('productSearch', $product->name)
+            ->call('selectProduct', $product->id)
+            ->assertSet('productSearch', '')
+            ->assertDispatched('focus-product-search')
+            ->call('selectProduct', $product->id)
+            ->assertSet('lines.0.quantity', 2)
+            ->assertDispatched('focus-product-search');
+    }
 });
 
 test('login bootstrap respects the persisted appearance instead of resetting it', function () {
@@ -94,4 +154,23 @@ test('invoice details present partner phone in the structured contact card', fun
     $user=User::factory()->create(['is_admin'=>true]); ['invoice'=>$invoice,'partner'=>$partner]=saleFixture();
     $partner->update(['phone'=>'0991234567']);
     $this->actingAs($user)->get(route('invoices.sales.show',$invoice))->assertOk()->assertSee('party-contact', false)->assertSee('0991234567');
+});
+
+test('invoice masthead renders its dynamic company facts', function () {
+    $user = User::factory()->create(['is_admin' => true]);
+    ['invoice' => $invoice] = saleFixture();
+
+    $settings = app(\App\Services\SettingsService::class);
+    $settings->set('company_name', 'شركة خلو التجريبية');
+    $settings->set('company_phone', '0991234567');
+    $settings->set('company_address', 'ريف دمشق - عربين');
+
+    $this->actingAs($user)->get(route('invoices.sales.show', $invoice))
+        ->assertOk()
+        ->assertSee('invoice-document__masthead', false)
+        ->assertSee('شركة خلو التجريبية')
+        ->assertSee('0991234567')
+        ->assertSee('ريف دمشق - عربين')
+        ->assertSee('#'.$invoice->id)
+        ->assertSee($invoice->created_at->format('Y-m-d H:i'));
 });

@@ -31,6 +31,6 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('message-to-you'));
+        return redirect()->route('message-to-you');
     }
 }

@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+$Port = 8010
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $artisanPath = Join-Path $projectRoot 'artisan'
 $runtimePath = Join-Path $projectRoot 'storage\app\runtime'
@@ -25,9 +26,10 @@ function Stop-TrackedProcess([string] $filename, [string] $kind) {
                 foreach ($child in $next) { [void] $descendants.Add($child) }
                 $parents = @($next | ForEach-Object { $_.ProcessId })
             }
+            $serverPattern = 'php(?:\.exe)?\s+-S\s+(?:127\.0\.0\.1|0\.0\.0\.0):' + [regex]::Escape([string] $Port)
             for ($index = $descendants.Count - 1; $index -ge 0; $index--) {
                 $child = $descendants[$index]
-                if ($child.CommandLine -match [regex]::Escape($projectRoot) -and $child.CommandLine -match 'php(?:\.exe)?\s+-S\s+(?:127\.0\.0\.1|0\.0\.0\.0):8000') {
+                if ($child.CommandLine -match [regex]::Escape($projectRoot) -and $child.CommandLine -match $serverPattern) {
                     Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
                 }
             }

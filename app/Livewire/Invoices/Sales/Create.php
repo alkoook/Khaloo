@@ -22,9 +22,9 @@ class Create extends Component
     public function selectProduct(int $id): void
     {
         $product=Product::query()->findOrFail($id);
-        foreach($this->lines as $index=>$line){if((int)$line['product_id']===$id){$this->lines[$index]['quantity']++;$this->productSearch='';$this->dispatch('focus-invoice-quantity',index:$index);return;}}
+        foreach($this->lines as $index=>$line){if((int)$line['product_id']===$id){$this->lines[$index]['quantity']++;$this->productSearch='';$this->dispatch('focus-product-search');return;}}
         $this->lines[]=['product_id'=>$id,'product_name'=>$product->name ?: 'منتج #'.$id,'available'=>$product->quantity,'quantity'=>1,'unit_price'=>(float)$product->sale_price];
-        $this->productSearch=''; $this->dispatch('focus-invoice-quantity',index:count($this->lines)-1);
+        $this->productSearch=''; $this->dispatch('focus-product-search');
     }
     public function removeLine(int $index): void { unset($this->lines[$index]);$this->lines=array_values($this->lines); }
     public function getTotalProperty(): float { return round(collect($this->lines)->sum(fn($line)=>(int)($line['quantity']??0)*(float)($line['unit_price']??0)),2); }

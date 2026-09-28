@@ -3,7 +3,7 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $artisanPath = Join-Path $projectRoot 'artisan'
 $runtimePath = Join-Path $projectRoot 'storage\app\runtime'
 $HostAddress = '0.0.0.0'
-$Port = 8000
+$Port = 8010
 $url = "http://127.0.0.1:$Port"
 $serverPidPath = Join-Path $runtimePath 'server.pid'
 $queuePidPath = Join-Path $runtimePath 'queue.pid'
@@ -48,24 +48,14 @@ try {
     New-Item -ItemType Directory -Path $runtimePath -Force | Out-Null
 
     $php = Get-Command php -ErrorAction SilentlyContinue
-    if (-not $php) {
-        Show-LaunchError ([regex]::Unescape('\u0644\u0645 \u064a\u062a\u0645 \u0627\u0644\u0639\u062b\u0648\u0631 \u0639\u0644\u0649 PHP. \u062b\u0628\u0651\u062a XAMPP \u0648\u0623\u0636\u0641 \u0645\u062c\u0644\u062f php \u0625\u0644\u0649 PATH \u062b\u0645 \u0623\u0639\u062f \u0627\u0644\u062a\u0634\u063a\u064a\u0644.'))
-        exit 1
-    }
+    if (-not $php) { Show-LaunchError 'PHP was not found in PATH.'; exit 1 }
     $phpPath = $php.Source
-
     & $phpPath $artisanPath migrate:status *> $null
-    if ($LASTEXITCODE -ne 0) {
-        Show-LaunchError ([regex]::Unescape('\u062a\u0639\u0630\u0631 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0642\u0627\u0639\u062f\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a. \u062a\u0623\u0643\u062f \u0623\u0646 \u062e\u062f\u0645\u0629 MySQL \u062a\u0639\u0645\u0644 \u0648\u0623\u0646 \u0625\u0639\u062f\u0627\u062f\u0627\u062a .env \u0635\u062d\u064a\u062d\u0629.'))
-        exit 1
-    }
+    if ($LASTEXITCODE -ne 0) { Show-LaunchError 'MySQL is unavailable. Check the database service and .env.'; exit 1 }
 
     $server = @(Get-ProjectProcess 'serve') | Select-Object -First 1
     if (-not $server) {
-        if (Test-HttpReady) {
-            Show-LaunchError ([regex]::Unescape('\u0627\u0644\u0645\u0646\u0641\u0630 8000 \u0645\u0633\u062a\u062e\u062f\u0645 \u0628\u0648\u0627\u0633\u0637\u0629 \u062a\u0637\u0628\u064a\u0642 \u0622\u062e\u0631. \u0623\u063a\u0644\u0642\u0647 \u062b\u0645 \u0623\u0639\u062f \u062a\u0634\u063a\u064a\u0644 Khaloo.'))
-            exit 1
-        }
+        if (Test-HttpReady) { Show-LaunchError 'Port 8010 is already in use.'; exit 1 }
         $server = Start-Process -FilePath $phpPath -ArgumentList ('"{0}" serve --host={1} --port={2}' -f $artisanPath, $HostAddress, $Port) -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runtimePath 'server.out.log') -RedirectStandardError (Join-Path $runtimePath 'server.err.log')
     }
     Set-Content -LiteralPath $serverPidPath -Value $(if ($server -is [System.Diagnostics.Process]) { $server.Id } else { $server.ProcessId }) -Encoding Ascii
@@ -81,16 +71,13 @@ try {
         if (Test-HttpReady) { $ready = $true; break }
         Start-Sleep -Milliseconds 500
     }
-    if (-not $ready) {
-        Show-LaunchError ([regex]::Unescape('\u0644\u0645 \u064a\u0628\u062f\u0623 \u062e\u0627\u062f\u0645 Khaloo. \u062a\u062d\u0642\u0642 \u0645\u0646 \u0645\u0644\u0641\u0627\u062a \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0641\u064a storage/app/runtime.'))
-        exit 1
-    }
+    if (-not $ready) { Show-LaunchError 'Khaloo server did not start. Check storage/app/runtime.'; exit 1 }
     $mobileUrl = Get-MobileUrl
     if ($mobileUrl) { Set-Content -LiteralPath (Join-Path $runtimePath 'mobile-url.txt') -Value $mobileUrl -Encoding Ascii }
     Start-Process $url
 } catch {
     try { Set-Content -LiteralPath (Join-Path $runtimePath 'launcher.err.log') -Value $_.Exception.Message -Encoding UTF8 } catch {}
-    Show-LaunchError ([regex]::Unescape('\u062a\u0639\u0630\u0631 \u062a\u0634\u063a\u064a\u0644 Khaloo. \u062a\u062d\u0642\u0642 \u0645\u0646 \u0645\u0644\u0641\u0627\u062a \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0641\u064a storage/app/runtime.'))
+    Show-LaunchError 'Khaloo could not be started. Check storage/app/runtime.'
     exit 1
 } finally {
     if ($mutex) {

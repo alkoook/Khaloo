@@ -19,6 +19,7 @@ return new class extends Migration
             $table->decimal('total', 14, 2)->default(0);
             $table->decimal('initial_paid', 14, 2)->default(0);
             $table->decimal('amount_paid', 14, 2)->default(0);
+            $table->uuid('return_request_key')->nullable()->unique();
             $table->timestamps();
             $table->index('created_at');
         });

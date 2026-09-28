@@ -65,6 +65,11 @@ class Invoice extends Model
         return $this->belongsTo(Invoice::class, 'original_invoice_id');
     }
 
+    public function purchaseFundingSource(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(PurchaseFundingSource::class);
+    }
+
     public function getBalanceAttribute(): float
     {
         return (float) $this->total - (float) $this->amount_paid;

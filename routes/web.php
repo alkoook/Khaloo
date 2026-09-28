@@ -59,6 +59,7 @@ Route::middleware(['auth', \App\Http\Middleware\EnsureWeeklyBackupReminder::clas
     Route::get('/invoices/{invoice}/receipt', [InvoiceController::class, 'receipt'])->name('invoices.receipt');
 
     Route::get('/ledger', \App\Livewire\Ledger\Index::class)->name('ledger.index');
+    Route::get('/financial-status', \App\Livewire\FinancialStatus::class)->name('financial-status.index');
     Route::get('/expenses', \App\Livewire\Expenses\Index::class)->name('expenses.index');
     Route::get('/payments/register', \App\Livewire\Payments\Register::class)->name('payments.register');
     Route::get('/quotations', \App\Livewire\Quotations\Index::class)->name('quotations.index');

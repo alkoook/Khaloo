@@ -83,22 +83,28 @@ class Index extends Component
     public function updatedSortBy(): void { $this->resetLedgerPages(); }
     private function resetLedgerPages(): void { $this->resetPage('receivablePage'); $this->resetPage('payablePage'); }
 
-    private function getBalances(string $side)
+    private function balanceRows()
     {
         $financials = app(FinancialService::class);
-        $rows = $financials->partnerBalancesQuery($this->search, $this->dateFrom ?: null, $this->dateTo ?: null)->get()
+        return $financials->partnerBalancesQuery($this->search, $this->dateFrom ?: null, $this->dateTo ?: null)->get()
             ->map(fn (Partner $partner) => [
                 'partner' => $partner,
-                'balance' => $financials->balanceFor($partner, $side),
+                'receivable' => $financials->receivable($partner),
+                'payable' => $financials->payable($partner),
                 'updated_at' => $partner->last_invoice_at,
-            ])->filter(fn (array $row) => $row['balance'] > 0);
+            ]);
+    }
 
+    private function getBalances(string $side, $allRows = null)
+    {
+        $rows = $allRows ?? $this->balanceRows();
+        $rows = $rows->map(fn (array $row) => $row + ['balance' => $row[$side]])->filter(fn (array $row) => $row['balance'] > 0);
         return ($this->sortBy === 'date' ? $rows->sortByDesc('updated_at') : $rows->sortByDesc('balance'))->values();
     }
 
-    private function paginateBalances(string $side): LengthAwarePaginator
+    private function paginateBalances(string $side, $allRows = null): LengthAwarePaginator
     {
-        $rows = $this->getBalances($side); $pageName = $side.'Page'; $page = $this->paginators[$pageName] ?? 1; $perPage = 15;
+        $rows = $this->getBalances($side, $allRows); $pageName = $side.'Page'; $page = $this->paginators[$pageName] ?? 1; $perPage = 15;
         return new LengthAwarePaginator($rows->forPage($page, $perPage)->values(), $rows->count(), $perPage, $page, ['path'=>request()->url(),'pageName'=>$pageName]);
     }
     public function getReceivableProperty() { return $this->paginateBalances('receivable'); }
@@ -130,10 +136,13 @@ class Index extends Component
 
     public function render()
     {
+        $allRows = $this->balanceRows();
+        $receivable = $this->paginateBalances('receivable', $allRows);
+        $payable = $this->paginateBalances('payable', $allRows);
         return view('livewire.ledger.index', [
-            'receivable' => $this->receivable,
-            'payable' => $this->payable,
-            'paymentPartners' => $this->paymentPartners,
+            'receivable' => $receivable,
+            'payable' => $payable,
+            'paymentPartners' => $this->getBalances($this->tab, $allRows)->pluck('partner'),
         ]);
     }
 }

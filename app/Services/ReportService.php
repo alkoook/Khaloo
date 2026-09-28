@@ -42,8 +42,9 @@ class ReportService
                 ->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)))
                 ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
-            $count = $query->count();
-            $total = (float) $query->sum('total');
+            $stats = $query->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(total), 0) as aggregate_total')->first();
+            $count = (int) $stats->aggregate_count;
+            $total = (float) $stats->aggregate_total;
         } elseif ($type === 'inventory') {
             $count = Product::query()->when($category, fn ($q) => $q->where('category_id', $category))->count();
         } elseif ($type === 'partners') {
@@ -125,31 +126,43 @@ class ReportService
         Invoice::query()->where('partner_id', $partner->id)->whereIn('type', [Invoice::TYPE_SALE, Invoice::TYPE_PURCHASE])
             ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
             ->get()->each(function ($invoice) use ($entries, $partner): void {
-                $due = (float) $invoice->total - (float) $invoice->amount_paid;
+                $due = round((float) $invoice->total - (float) $invoice->amount_paid, 2);
                 $relevant = ($partner->isCustomer() && $invoice->isSale()) || ($partner->isSupplier() && $invoice->isPurchase());
-                if ($relevant) $entries->push(['date' => $invoice->created_at, 'ref' => '#'.$invoice->id, 'description' => $invoice->isSale() ? 'فاتورة مبيعات' : 'فاتورة مشتريات', 'debit' => $due, 'credit' => 0]);
+                if ($relevant) $entries->push(['date' => $invoice->created_at, 'ref' => '#'.$invoice->id, 'description' => $invoice->isSale() ? 'فاتورة مبيعات' : 'فاتورة مشتريات', 'debit' => max(0, $due), 'credit' => max(0, -$due)]);
             });
         LedgerSettlement::query()->where('partner_id', $partner->id)
             ->when($from, fn ($q) => $q->whereDate('settlement_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('settlement_date', '<=', $to))
             ->get()->each(function ($payment) use ($entries, $partner): void {
-                $reduces = ($partner->isCustomer() && $payment->type === LedgerSettlement::TYPE_INCOMING) || ($partner->isSupplier() && $payment->type === LedgerSettlement::TYPE_OUTGOING);
+                $reduces = ($partner->isCustomer() && $payment->type === LedgerSettlement::TYPE_INCOMING) || $partner->isSupplier();
                 $entries->push(['date' => $payment->settlement_date, 'ref' => 'P-'.$payment->id, 'description' => $payment->notes ?: 'دفعة', 'debit' => $reduces ? 0 : (float) $payment->amount, 'credit' => $reduces ? (float) $payment->amount : 0]);
             });
-        $balance = 0.0;
+        $opening = 0.0;
+        if ($from) {
+            $before = now()->parse($from)->subDay()->toDateString();
+            $openingPartner = app(FinancialService::class)->partnerBalancesQuery(null, null, $before)->find($partner->id);
+            if ($openingPartner) {
+                $opening = app(FinancialService::class)->signedBalance($openingPartner);
+            }
+        }
+
+        $balance = $opening;
         $rows = $entries->sortBy(fn ($row) => $row['date']->format('Y-m-d').'|'.$row['ref'])->values()->map(function ($row) use (&$balance): array {
             $balance += $row['debit'] - $row['credit'];
             return [$row['date']->format('Y-m-d'), $row['ref'], $row['description'], $row['debit'], $row['credit'], round($balance, 2)];
         })->all();
-        $authoritativePartner = app(FinancialService::class)->partnerBalancesQuery(null, $from, $to)->find($partner->id);
+        if ($from) {
+            array_unshift($rows, ['', '', 'الرصيد الافتتاحي', '', '', $opening]);
+        }
+        $authoritativePartner = app(FinancialService::class)->partnerBalancesQuery(null, null, $to)->find($partner->id);
         $authoritativeBalance = $authoritativePartner
-            ? app(FinancialService::class)->balanceFor($authoritativePartner, $partner->isSupplier() ? 'payable' : 'receivable')
+            ? app(FinancialService::class)->signedBalance($authoritativePartner)
             : 0.0;
         $rows[] = ['', '', 'الرصيد الختامي المعتمد', '', '', $authoritativeBalance];
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet(); $sheet->setTitle('كشف الحساب'); $sheet->setRightToLeft(true);
         $statementTitle = 'كشف حساب '.($partner->isCustomer()?'العميل ':'المورد ').$partner->name.' من '.($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم');
         $sheet->setCellValue('A1', $statementTitle); $sheet->mergeCells('A1:F1');
-        $sheet->fromArray(['التاريخ','المرجع','البيان','مدين','دائن','الرصيد'], null, 'A3');
+        $sheet->fromArray(['التاريخ','المرجع','البيان','زيادة الرصيد','تخفيض الرصيد','الرصيد'], null, 'A3');
         if ($rows) $sheet->fromArray($rows, null, 'A4');
         $this->style($sheet, 6, count($rows) + 3, 3);
         $path = $this->path($statementTitle.'-'.Str::ulid().'.xlsx');
@@ -164,30 +177,33 @@ class ReportService
             ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
             ->get()->each(function (Invoice $invoice) use ($movements, $partner): void {
                 $relevant = ($partner->isCustomer() && $invoice->isSale()) || ($partner->isSupplier() && $invoice->isPurchase());
-                if ($relevant) $movements->push(['date'=>$invoice->created_at, 'label'=>'فاتورة رقم '.$invoice->id, 'debit'=>(float)$invoice->remaining, 'credit'=>0.0]);
+                if ($relevant) {
+                    $due = round((float) $invoice->total - (float) $invoice->amount_paid, 2);
+                    $movements->push(['date'=>$invoice->created_at, 'label'=>'فاتورة رقم '.$invoice->id, 'debit'=>max(0.0, $due), 'credit'=>max(0.0, -$due)]);
+                }
             });
         LedgerSettlement::query()->where('partner_id', $partner->id)
             ->when($from, fn ($q) => $q->whereDate('settlement_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('settlement_date', '<=', $to))
             ->get()->each(function (LedgerSettlement $payment) use ($movements, $partner): void {
-                $reduces = ($partner->isCustomer() && $payment->type === LedgerSettlement::TYPE_INCOMING) || ($partner->isSupplier() && $payment->type === LedgerSettlement::TYPE_OUTGOING);
+                $reduces = ($partner->isCustomer() && $payment->type === LedgerSettlement::TYPE_INCOMING) || $partner->isSupplier();
                 $movements->push(['date'=>$payment->settlement_date, 'label'=>$payment->notes ?: ($payment->type === LedgerSettlement::TYPE_INCOMING ? 'دفعة مقبوضة' : 'دفعة مدفوعة'), 'debit'=>$reduces ? 0.0 : (float)$payment->amount, 'credit'=>$reduces ? (float)$payment->amount : 0.0]);
             });
         $opening = 0.0;
         if ($from) {
             $before = now()->parse($from)->subDay()->toDateString();
             $openingPartner = app(FinancialService::class)->partnerBalancesQuery(null, null, $before)->find($partner->id);
-            if ($openingPartner) $opening = app(FinancialService::class)->balanceFor($openingPartner, $partner->isSupplier() ? 'payable' : 'receivable');
+            if ($openingPartner) $opening = app(FinancialService::class)->signedBalance($openingPartner);
         }
         $authoritative = app(FinancialService::class)->partnerBalancesQuery(null, null, $to)->find($partner->id);
-        $closing = $authoritative ? app(FinancialService::class)->balanceFor($authoritative, $partner->isSupplier() ? 'payable' : 'receivable') : 0.0;
+        $closing = $authoritative ? app(FinancialService::class)->signedBalance($authoritative) : 0.0;
         $debit = $movements->sum('debit'); $credit = $movements->sum('credit');
         $type = $partner->isCustomer() ? 'عميل' : 'مورد';
         $text = "📑 كشف حساب\nالطرف: {$partner->name}\nالنوع: {$type}\nالفترة: ".($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم')
-            ."\nالرصيد الافتتاحي: ".number_format($opening, 2)."\nإجمالي المدين: ".number_format($debit, 2)
-            ."\nإجمالي الدائن: ".number_format($credit, 2)."\nالرصيد النهائي: ".number_format($closing, 2)."\n──────────\nآخر الحركات:";
+            ."\nالرصيد الافتتاحي: ".number_format($opening, 2)."\nإجمالي زيادة الرصيد: ".number_format($debit, 2)
+            ."\nإجمالي تخفيض الرصيد: ".number_format($credit, 2)."\nالرصيد النهائي: ".number_format($closing, 2)."\n──────────\nآخر الحركات:";
         foreach ($movements->sortByDesc('date')->take(12) as $movement) {
             $amount = $movement['debit'] ?: $movement['credit'];
-            $direction = $movement['debit'] ? 'مدين' : 'دائن';
+            $direction = $movement['debit'] ? 'زيادة في الرصيد' : 'تخفيض من الرصيد';
             $text .= "\n• ".$movement['date']->format('Y-m-d').' — '.$movement['label'].' — '.number_format($amount, 2)." ({$direction})";
         }
         if ($movements->isEmpty()) $text .= "\nلا توجد حركات ضمن هذه الفترة.";

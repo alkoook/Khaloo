@@ -1,4 +1,4 @@
-<div>
+<div x-data="{activeResult:0,resultsOpen:true}" @focus-product-search.window="$nextTick(()=>$refs.productSearch?.focus())">
     <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
             <h1 class="text-2xl font-bold" style="color: var(--app-text)">تعديل فاتورة #{{ $invoice->id }}</h1>
@@ -16,6 +16,7 @@
                 <div class="p-6">
                     <h2 class="text-lg font-semibold mb-4" style="color: var(--app-text)">تفاصيل المنتجات</h2>
                     
+                    <div class="product-picker"><label>إضافة منتج بالاسم أو الرقم أو التصنيف</label><input x-ref="productSearch" wire:model.live.debounce.220ms="productSearch" placeholder="اكتب للبحث…" autocomplete="off" @input="activeResult=0;resultsOpen=true" @keydown.arrow-down.prevent.stop="activeResult=Math.min(activeResult+1,Math.max(0,$refs.productResults?.querySelectorAll('button').length-1))" @keydown.arrow-up.prevent.stop="activeResult=Math.max(activeResult-1,0)" @keydown.enter.prevent.stop="if(resultsOpen){$refs.productResults?.querySelectorAll('button')[activeResult]?.click()}" @keydown.escape.prevent.stop="resultsOpen=false;activeResult=0;$nextTick(()=>$refs.productSearch.focus())">@if($productSearch!=='')<div x-ref="productResults" x-show="resultsOpen" class="picker-results">@forelse($productResults as $product)<button type="button" wire:click="selectProduct({{ $product->id }})" @mouseenter="activeResult={{ $loop->index }}" :class="activeResult==={{ $loop->index }}&&'is-keyboard-active'"><strong>{{ $product->name }}</strong><small>#{{ $product->id }} · {{ $product->category?->name }}</small><b>{{ number_format((float) ($invoice->isSale() ? $product->sale_price : $product->purchase_price), 2) }}</b></button>@empty<div class="empty-result">لا توجد نتائج مطابقة</div>@endforelse</div>@endif</div>
                     <div class="space-y-4">
                         @foreach($lines as $index => $line)
                             <div class="flex flex-col sm:flex-row gap-4 p-4 rounded-xl border relative" style="background: var(--app-bg); border-color: var(--app-border);">

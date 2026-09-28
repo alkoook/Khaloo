@@ -32,6 +32,7 @@ class Index extends Component
         }
         if (! in_array($this->theme, ['obsidian-ruby','arctic-cobalt','marine-night'], true)) $this->theme = 'marine-night';
         if (! in_array($this->font_family, ['cairo','changa','reem-kufi','baloo'], true)) $this->font_family = 'cairo';
+        if (! in_array((string) $this->receipt_width, ['72', '80'], true)) $this->receipt_width = '80';
         $this->logo_path=$settings->get('logo'); $this->favicon_path=$settings->get('favicon'); $this->invoice_logo_path=$settings->get('invoice_logo');
     }
 
@@ -52,7 +53,7 @@ class Index extends Component
     }
     public function savePrinting(SettingsService $settings): void
     {
-        $data=$this->validate(['receipt_width'=>['required','in:58,80'],'receipt_show_logo'=>['boolean'],'receipt_show_company'=>['boolean'],'receipt_show_phone'=>['boolean'],'receipt_show_address'=>['boolean'],'receipt_show_partner'=>['boolean'],'receipt_show_number'=>['boolean'],'receipt_show_footer'=>['boolean'],'receipt_auto_print'=>['boolean'],'receipt_footer'=>['nullable','string','max:300']]); $settings->setMany($data,'printing'); $this->saved();
+        $data=$this->validate(['receipt_width'=>['required','in:72,80'],'receipt_show_logo'=>['boolean'],'receipt_show_company'=>['boolean'],'receipt_show_phone'=>['boolean'],'receipt_show_address'=>['boolean'],'receipt_show_partner'=>['boolean'],'receipt_show_number'=>['boolean'],'receipt_show_footer'=>['boolean'],'receipt_auto_print'=>['boolean'],'receipt_footer'=>['nullable','string','max:300']]); $settings->setMany($data,'printing'); $this->saved();
     }
     public function saveAlerts(SettingsService $settings): void
     {

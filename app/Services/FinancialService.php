@@ -59,11 +59,28 @@ class FinancialService
             return max(0, round((float) $partner->incoming_total - (float) $partner->sales_due - (float) $partner->outgoing_total, 2));
         }
         if (! $partner->isSupplier()) return 0.0;
-        return max(0, round((float) $partner->purchases_due - (float) $partner->outgoing_total + (float) $partner->incoming_total, 2));
+        return max(0, round((float) $partner->purchases_due - (float) $partner->outgoing_total - (float) $partner->incoming_total, 2));
     }
 
     public function balanceFor(Partner $partner, string $side): float
     {
         return $side === 'payable' ? $this->payable($partner) : $this->receivable($partner);
+    }
+
+    /**
+     * Positive means an amount remains due from the counterparty's normal
+     * invoice flow; negative means the counterparty has a credit balance.
+     */
+    public function signedBalance(Partner $partner): float
+    {
+        if ($partner->isCustomer()) {
+            return round((float) $partner->sales_due - (float) $partner->incoming_total + (float) $partner->outgoing_total, 2);
+        }
+
+        if ($partner->isSupplier()) {
+            return round((float) $partner->purchases_due - (float) $partner->outgoing_total - (float) $partner->incoming_total, 2);
+        }
+
+        return 0.0;
     }
 }

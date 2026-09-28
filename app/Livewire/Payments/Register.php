@@ -85,6 +85,16 @@ class Register extends Component
         ]);
 
         $amount = (float) $this->amount;
+        $financials = app(FinancialService::class);
+        $partner = $financials->partnerBalancesQuery()->findOrFail($this->partnerId);
+        $side = $this->settlementType === LedgerSettlement::TYPE_INCOMING ? 'receivable' : 'payable';
+        $available = $financials->balanceFor($partner, $side);
+
+        if ($amount > $available) {
+            $this->addError('amount', 'قيمة الدفعة أكبر من الرصيد المستحق لهذا الطرف.');
+
+            return;
+        }
 
         // The user requested that payments be kept separate and not modify existing invoices.
         // So we no longer iterate through invoices to update 'amount_paid'.
@@ -98,7 +108,6 @@ class Register extends Component
         ]);
         app(\App\Services\AlertService::class)->evaluatePartners((int) $this->partnerId);
         if (app(SettingsService::class)->get('telegram_payments', true)) {
-            $partner = Partner::find($this->partnerId);
             app(TelegramService::class)->sendMessage("💳 دفعة جديدة\nالطرف: {$partner?->name}\nالمبلغ: ".number_format($amount, 2));
         }
 
@@ -144,7 +153,7 @@ class Register extends Component
 
         return view('livewire.payments.register', [
             'settlements' => $settlements,
-            'partnersWithBalance' => $this->partnersWithBalance,
+            'partnersWithBalance' => $this->showAddModal ? $this->partnersWithBalance : collect(),
         ]);
     }
 }
