@@ -1,13 +1,93 @@
 @php
     $settings = app(\App\Services\SettingsService::class);
-    $printFonts = ['cairo'=>'Cairo, Tahoma, Arial, sans-serif','changa'=>'Changa, Tahoma, Arial, sans-serif','reem-kufi'=>'"Reem Kufi", Tahoma, Arial, sans-serif','baloo'=>'"Baloo Bhaijaan 2", Tahoma, Arial, sans-serif'];
-    $printFont = $printFonts[$settings->get('font_family','cairo')] ?? $printFonts['cairo'];
+    $printFonts = [
+        'cairo' => 'Cairo, Tahoma, Arial, sans-serif',
+        'changa' => 'Changa, Tahoma, Arial, sans-serif',
+        'reem-kufi' => '"Reem Kufi", Tahoma, Arial, sans-serif',
+        'baloo' => '"Baloo Bhaijaan 2", Tahoma, Arial, sans-serif',
+    ];
+    $printFont = $printFonts[$settings->get('font_family', 'cairo')] ?? $printFonts['cairo'];
+    $companyName = (string) $settings->get('company_name', $settings->get('site_name', 'Khaloo'));
+    $companyDescription = trim((string) $settings->get('company_description', ''));
+    $companyPhone = trim((string) $settings->get('company_phone', ''));
+    $companyEmail = trim((string) $settings->get('company_email', ''));
+    $companyAddress = trim((string) $settings->get('company_address', ''));
+    $companyLogo = $settings->get('logo');
+    $customerPhone = trim((string) ($quotation->customer_phone ?: $quotation->partner?->phone));
+    $currencySymbol = trim((string) $settings->get('currency_symbol', ''));
 @endphp
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>{{ $quotation->number }}</title><style>
-@page{size:A4;margin:16mm}*{box-sizing:border-box}body{font-family:{!! $printFont !!};color:#171717;margin:0}.head{display:flex;justify-content:space-between;border-bottom:3px solid #237f8e;padding-bottom:18px}.brand{font-size:28px;font-weight:900}.muted{color:#666}table{width:100%;border-collapse:collapse;margin-top:28px}th,td{padding:11px;border:1px solid #ddd;text-align:right}th{background:#07131c;color:#fff}.totals{width:320px;margin:22px 0 0 auto}.totals div{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #ddd}.total{font-size:20px;font-weight:bold}.notes{margin-top:28px;padding:16px;background:#f1f7f8;border-right:4px solid #237f8e}.no-print{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid #237f8e;border-radius:10px;background:#237f8e;color:#fff;font-weight:700;box-shadow:0 7px 18px #12343c28;cursor:pointer;transition:.2s}.no-print:hover{transform:translateY(-2px);box-shadow:0 10px 24px #12343c38}.no-print svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}@media print{.no-print{display:none}}
-</style></head><body><button class="no-print" onclick="print()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17h10v4H7zM5 17H3v-7h18v7h-2M17 12h1"/></svg><span>طباعة عرض السعر</span></button>
-<header class="head"><div><div class="brand">{{ $settings->get('business_name','Khaloo') }}</div><div class="muted">عرض سعر احترافي</div></div><div><strong>{{ $quotation->number }}</strong><br>{{ $quotation->quotation_date->format('Y-m-d') }}<br>@if($quotation->expires_at)<span class="muted">صالح حتى {{ $quotation->expires_at->format('Y-m-d') }}</span>@endif</div></header>
-<p><strong>العميل:</strong> {{ $quotation->display_customer }} @if($quotation->customer_phone) — {{ $quotation->customer_phone }}@endif</p>
-<table><thead><tr><th>#</th><th>المنتج</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>@foreach($quotation->lines as $line)<tr><td>{{ $loop->iteration }}</td><td>{{ $line->product_name }}</td><td>{{ $line->quantity }}</td><td>{{ number_format((float)$line->unit_price,2) }}</td><td>{{ number_format((float)$line->line_total,2) }}</td></tr>@endforeach</tbody></table>
-<div class="totals"><div><span>المجموع</span><b>{{ number_format((float)$quotation->subtotal,2) }}</b></div><div><span>الحسم</span><b>{{ number_format((float)$quotation->discount,2) }}</b></div><div class="total"><span>الإجمالي</span><b>{{ number_format((float)$quotation->total,2) }}</b></div></div>@if($quotation->notes)<div class="notes">{{ $quotation->notes }}</div>@endif
-</body></html>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>عرض سعر {{ $quotation->number }}</title>
+    @vite('resources/css/quotation-print.css')
+</head>
+<body style="--quotation-font: {!! $printFont !!};">
+    <div class="quotation-screen-actions no-print">
+        <button type="button" class="quotation-print-button" onclick="window.print()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17h10v4H7zM5 17H3v-7h18v7h-2M17 12h1"/></svg>
+            <span>طباعة عرض السعر</span>
+        </button>
+    </div>
+
+    <main class="quotation-document">
+        <header class="quotation-masthead">
+            <section class="quotation-brand">
+                <div class="quotation-logo" aria-hidden="true">
+                    @if($companyLogo)<img src="{{ Storage::url($companyLogo) }}" alt="">@else<span>{{ mb_substr($companyName, 0, 1) }}</span>@endif
+                </div>
+                <div class="quotation-brand-copy">
+                    <p class="quotation-kicker">{{ $companyDescription ?: 'حلول أعمال منظمة وواضحة' }}</p>
+                    <h1>{{ $companyName }}</h1>
+                    <div class="quotation-company-contact">
+                        @if($companyPhone)<span>{{ $companyPhone }}</span>@endif
+                        @if($companyEmail)<span>{{ $companyEmail }}</span>@endif
+                        @if($companyAddress)<span>{{ $companyAddress }}</span>@endif
+                    </div>
+                </div>
+            </section>
+
+            <section class="quotation-identity">
+                <span class="quotation-document-label">عرض سعر</span>
+                <strong>{{ $quotation->number }}</strong>
+                <dl>
+                    <div><dt>تاريخ الإنشاء</dt><dd>{{ $quotation->quotation_date?->format('Y-m-d') }}</dd></div>
+                    @if($quotation->expires_at)<div><dt>صالح حتى</dt><dd>{{ $quotation->expires_at->format('Y-m-d') }}</dd></div>@endif
+                </dl>
+            </section>
+        </header>
+
+        <section class="quotation-client-card">
+            <div class="quotation-client-marker"><span>إلى</span></div>
+            <div><p>مقدم إلى</p><h2>{{ $quotation->display_customer }}</h2>@if($customerPhone)<span class="quotation-client-phone">{{ $customerPhone }}</span>@endif</div>
+            <div class="quotation-client-note">يسعدنا تقديم عرض السعر التالي لكم، وفق التفاصيل الموضحة أدناه.</div>
+        </section>
+
+        <section class="quotation-lines-section">
+            <div class="quotation-section-heading"><div><span>تفاصيل العرض</span><h2>الأصناف والخدمات المقترحة</h2></div><small>{{ $quotation->lines->count() }} {{ $quotation->lines->count() === 1 ? 'صنف' : 'أصناف' }}</small></div>
+            <div class="quotation-table-wrap">
+                <table class="quotation-lines">
+                    <thead><tr><th class="line-number">#</th><th>المنتج</th><th class="line-quantity">الكمية</th><th class="line-money">السعر</th><th class="line-money">الإجمالي</th></tr></thead>
+                    <tbody>@foreach($quotation->lines as $line)<tr><td class="line-number">{{ $loop->iteration }}</td><td class="line-product">{{ $line->product_name }}</td><td class="line-quantity">{{ number_format((float) $line->quantity, 2) }}</td><td class="line-money">{{ number_format((float) $line->unit_price, 2) }}</td><td class="line-money line-total">{{ number_format((float) $line->line_total, 2) }}</td></tr>@endforeach</tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="quotation-closing-grid">
+            <div class="quotation-notes-stack">
+                @if($quotation->notes)<article class="quotation-notes-card"><span class="quotation-notes-icon" aria-hidden="true">✦</span><div><h2>ملاحظات العرض</h2><p>{!! nl2br(e($quotation->notes)) !!}</p></div></article>@endif
+                <article class="quotation-validity-card"><h2>شروط وصلاحية العرض</h2><p>@if($quotation->expires_at)هذا العرض صالح حتى {{ $quotation->expires_at->format('Y-m-d') }}.@else هذا العرض قابل للمراجعة عند الحاجة.@endif الأسعار والأصناف حسب التفاصيل أعلاه.</p></article>
+            </div>
+            <aside class="quotation-totals-card" aria-label="إجماليات عرض السعر">
+                <div class="quotation-total-row"><span>المجموع</span><b>{{ number_format((float) $quotation->subtotal, 2) }} {{ $currencySymbol }}</b></div>
+                @if((float) $quotation->discount > 0)<div class="quotation-total-row quotation-discount"><span>الخصم</span><b>− {{ number_format((float) $quotation->discount, 2) }} {{ $currencySymbol }}</b></div>@endif
+                <div class="quotation-total-final"><span>الإجمالي النهائي</span><strong>{{ number_format((float) $quotation->total, 2) }} <small>{{ $currencySymbol }}</small></strong></div>
+            </aside>
+        </section>
+
+        <footer class="quotation-footer"><p>نشكر لكم ثقتكم ونتطلع للتعامل معكم.</p><div><span>{{ $companyName }}</span>@if($companyPhone)<span>{{ $companyPhone }}</span>@endif<span class="quotation-page-number">صفحة </span></div></footer>
+    </main>
+</body>
+</html>

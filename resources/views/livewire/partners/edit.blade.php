@@ -44,7 +44,7 @@
             <label class="block text-sm font-medium mt-3">رقم الهاتف</label><input type="tel" wire:model="phone" class="w-full rounded-lg border px-4 py-2" style="background:var(--app-bg);border-color:var(--app-border);color:var(--app-text)">
         </div>
         <div class="flex gap-2">
-            <button type="submit" class="px-4 py-2 rounded-lg text-white font-medium" style="background: var(--app-primary);">حفظ</button>
+            <button type="submit" wire:loading.attr="disabled" wire:target="save" class="px-4 py-2 rounded-lg text-white font-medium" style="background: var(--app-primary);">حفظ</button>
             <a href="{{ route('partners.index') }}" class="px-4 py-2 rounded-lg" style="background: var(--app-bg); color: var(--app-text);">إلغاء</a>
         </div>
     </form>

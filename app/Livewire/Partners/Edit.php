@@ -3,7 +3,6 @@
 namespace App\Livewire\Partners;
 
 use App\Models\Partner;
-use Illuminate\Http\RedirectResponse;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Illuminate\Support\Facades\Storage;
@@ -44,7 +43,7 @@ class Edit extends Component
         $this->type = $partner->type;
     }
 
-    public function save(): RedirectResponse
+    public function save(): void
     {
         $this->validate([
             'name' => ['nullable', 'string', 'max:255'],
@@ -78,7 +77,7 @@ class Edit extends Component
         app(\App\Services\TelegramService::class)->notifyUpdated('partner', $this->partner->name ?? ($this->partner->type === 'customer' ? 'زبون' : 'مورد').' #'.$this->partner->id);
         session()->flash('success', 'تم التحديث.');
 
-        return $this->redirect(route('partners.index'));
+        $this->redirectRoute('partners.index', navigate: true);
     }
 
     public function render()

@@ -3,7 +3,6 @@
 namespace App\Livewire\Partners;
 
 use App\Models\Partner;
-use Illuminate\Http\RedirectResponse;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -28,7 +27,7 @@ class Create extends Component
 
     public $image = null;
 
-    public function save(): RedirectResponse
+    public function save(): void
     {
         $this->validate([
             'name' => ['nullable', 'string', 'max:255'],
@@ -60,7 +59,7 @@ class Create extends Component
         Partner::create($data);
         session()->flash('success', 'تم الإضافة.');
 
-        return $this->redirect(route('partners.index'));
+        $this->redirectRoute('partners.index', navigate: true);
     }
 
     public function render()
