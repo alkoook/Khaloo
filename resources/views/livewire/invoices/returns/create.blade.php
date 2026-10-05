@@ -64,7 +64,7 @@
                         
                         <div>
                             <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">المبلغ المردود نقداً (إن وجد)</label>
-                            <input type="number" step="0.01" wire:model="amountPaid" min="0" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                            <input type="number" step="0.01" wire:model="amountPaid" min="0" placeholder="لا يوجد استرداد نقدي" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
                             <p class="text-xs mt-1" style="color: var(--app-muted)">تُخصم قيمة المرتجع من الدين أولًا. لا تسجّل هنا إلا المبلغ الذي أُعيد نقدًا فعليًا للعميل.</p>
                         </div>
                         

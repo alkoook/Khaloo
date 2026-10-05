@@ -3,9 +3,10 @@
 namespace App\Livewire\Invoices\Purchases;
 
 use App\Models\Invoice;
-use App\Services\TelegramService;
 use App\Services\AlertService;
-use Illuminate\Support\Facades\DB;
+use App\Services\ExportFileService;
+use App\Services\InvoiceCancellationService;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithPagination;
 use PhpOffice\PhpWord\TemplateProcessor;
@@ -16,53 +17,57 @@ class Index extends Component
 
     public string $search = '';
 
+    public ?int $cancellingId = null;
+
+    public string $cancellationReason = '';
+
     public function updatedSearch(): void
     {
         $this->resetPage();
     }
 
-    public function delete(int $id): void
+    public function openCancellation(int $id): void
     {
-        $invoice = Invoice::with('lines.product', 'partner')->findOrFail($id);
+        $invoice = Invoice::query()->findOrFail($id);
         abort_unless(auth()->user()?->can('delete', $invoice), 403);
-        if ($invoice->type !== Invoice::TYPE_PURCHASE) {
+        abort_unless($invoice->type === Invoice::TYPE_PURCHASE, 404);
+        if ($invoice->isCancelled()) {
             return;
         }
+        $this->cancellingId = $invoice->id;
+        $this->cancellationReason = '';
+        $this->resetValidation();
+    }
 
-        foreach ($invoice->lines as $line) {
-            if ($line->product_id && (! $line->product || $line->product->quantity < $line->quantity)) {
-                $this->dispatch('flash', message: 'لا يمكن حذف فاتورة الشراء لأن جزءًا من الكمية تم بيعه بالفعل.', type: 'error');
-                return;
-            }
+    public function cancel(InvoiceCancellationService $cancellations): void
+    {
+        $invoice = Invoice::query()->findOrFail($this->cancellingId);
+        abort_unless(auth()->user()?->can('delete', $invoice), 403);
+        abort_unless($invoice->type === Invoice::TYPE_PURCHASE, 404);
+        try {
+            $productIds = $cancellations->cancel($invoice, (int) auth()->id(), $this->cancellationReason);
+        } catch (ValidationException $exception) {
+            $this->addError('cancellationReason', collect($exception->errors())->flatten()->first());
+
+            return;
         }
-
-        $label = 'فاتورة #'.$id.' - '.($invoice->partner->name ?? '');
-
-        $productIds = $invoice->lines->pluck('product_id')->filter();
-        $partnerId = $invoice->partner_id;
-        DB::transaction(function () use ($invoice): void {
-            foreach ($invoice->lines as $line) {
-                if ($line->product_id) {
-                    $line->product->decrement('quantity', $line->quantity);
-                }
-            }
-            $invoice->lines()->delete();
-            $invoice->delete();
-        });
         app(AlertService::class)->evaluateProducts($productIds);
-        if ($partnerId) app(AlertService::class)->evaluatePartners($partnerId);
-
-        app(TelegramService::class)->notifyDeleted('invoice_purchase', $label);
-        $this->dispatch('flash', message: 'تم حذف فاتورة الشراء وتم خصم الكميات من المخزن.', type: 'success');
+        if ($invoice->partner_id) {
+            app(AlertService::class)->evaluatePartners($invoice->partner_id);
+        }
+        $this->cancellingId = null;
+        $this->cancellationReason = '';
+        $this->dispatch('flash', message: 'تم إلغاء فاتورة الشراء وعكس أثر المخزون مرة واحدة مع الاحتفاظ بسجلها.', type: 'success');
     }
 
     public function printWord(int $id)
     {
         $invoice = Invoice::with('lines', 'partner')->findOrFail($id);
-        
+
         $templatePath = storage_path('app/public/templates/invoice.docx');
-        if (!file_exists($templatePath)) {
+        if (! file_exists($templatePath)) {
             $this->dispatch('flash', message: 'قالب الفاتورة غير موجود. يرجى إضافته في storage/app/public/templates/invoice.docx', type: 'error');
+
             return;
         }
 
@@ -88,14 +93,14 @@ class Index extends Component
         if (count($rows) > 0) {
             $templateProcessor->cloneRowAndSetValues('product_name', $rows);
         } else {
-             $templateProcessor->cloneRow('product_name', 0);
+            $templateProcessor->cloneRow('product_name', 0);
         }
 
         $typeLabel = $invoice->isSale() ? 'بيع' : 'شراء';
         $partnerName = str_replace(' ', '_', $invoice->partner->name ?? 'مجهول');
         $invoiceDate = $invoice->created_at->format('Y-m-d');
-        $fileName = 'فاتورة_'.$typeLabel.'_' . $partnerName . '_' . $invoiceDate . '_' . $invoice->id . '.docx';
-        $outputPath = app(\App\Services\ExportFileService::class)->path($fileName);
+        $fileName = 'فاتورة_'.$typeLabel.'_'.$partnerName.'_'.$invoiceDate.'_'.$invoice->id.'.docx';
+        $outputPath = app(ExportFileService::class)->path($fileName);
 
         $templateProcessor->saveAs($outputPath);
 

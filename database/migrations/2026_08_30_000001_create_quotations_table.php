@@ -18,6 +18,9 @@ return new class extends Migration
             $table->date('expires_at')->nullable()->index();
             $table->string('status')->default('draft')->index();
             $table->decimal('subtotal', 14, 2)->default(0);
+            $table->string('discount_type')->nullable();
+            $table->decimal('discount_value', 14, 2)->default(0);
+            $table->decimal('discount_amount', 14, 2)->default(0);
             $table->decimal('discount', 14, 2)->default(0);
             $table->decimal('total', 14, 2)->default(0);
             $table->text('notes')->nullable();

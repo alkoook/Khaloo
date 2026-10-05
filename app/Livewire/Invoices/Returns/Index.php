@@ -13,6 +13,7 @@ class Index extends Component
     public function render()
     {
         $returns = Invoice::query()
+            ->active()
             ->with('partner')
             ->where('type', Invoice::TYPE_RETURN)
             ->orderByDesc('created_at')

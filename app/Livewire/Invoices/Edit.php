@@ -4,19 +4,30 @@ namespace App\Livewire\Invoices;
 
 use App\Models\Invoice;
 use App\Models\Product;
+use App\Services\InvoicePricingService;
 use App\Services\InvoiceService;
 use Livewire\Component;
 
 class Edit extends Component
 {
     public Invoice $invoice;
+
     public array $lines = [];
-    public float $amountPaid = 0;
+
+    public string $amountPaid = '';
+
+    public string $discountType = 'fixed';
+
+    public string $discountValue = '';
+
     public array $products = [];
+
     public string $productSearch = '';
 
     protected $rules = [
         'amountPaid' => 'required|numeric|min:0',
+        'discountType' => 'required|in:fixed,percentage',
+        'discountValue' => 'nullable|numeric|min:0',
         'lines' => 'required|array|min:1',
         'lines.*.product_id' => 'required|exists:products,id',
         'lines.*.quantity' => 'required|integer|min:1',
@@ -26,10 +37,13 @@ class Edit extends Component
     public function mount(Invoice $invoice)
     {
         abort_unless(auth()->user()?->can('update', $invoice), 403);
+        abort_if($invoice->isCancelled(), 409, 'لا يمكن تعديل فاتورة ملغاة.');
         $this->invoice = $invoice;
         $this->invoice->load('lines.product');
-        $this->amountPaid = (float) $invoice->amount_paid;
-        
+        $this->amountPaid = (float) $invoice->amount_paid > 0 ? (string) $invoice->amount_paid : '';
+        $this->discountType = $invoice->discount_type ?: 'fixed';
+        $this->discountValue = (float) $invoice->discount_value > 0 ? (string) $invoice->discount_value : '';
+
         foreach ($this->invoice->lines as $line) {
             $this->lines[] = [
                 'product_id' => $line->product_id,
@@ -38,7 +52,7 @@ class Edit extends Component
                 'sale_price' => $line->sale_price,
             ];
         }
-        
+
         $this->products = Product::orderBy('name')->get()->toArray();
     }
 
@@ -61,6 +75,7 @@ class Edit extends Component
                 $this->lines[$index]['quantity'] = (int) ($line['quantity'] ?? 0) + 1;
                 $this->productSearch = '';
                 $this->dispatch('focus-product-search');
+
                 return;
             }
         }
@@ -108,14 +123,28 @@ class Edit extends Component
             $invoiceService->updateInvoice(
                 $this->invoice,
                 $this->lines,
-                (float) $this->amountPaid
+                (float) ($this->amountPaid === '' ? 0 : $this->amountPaid),
+                $this->discountType,
+                $this->discountValue,
             );
 
             $route = $this->invoice->isSale() ? 'invoices.sales.show' : 'invoices.purchases.show';
+
             return redirect()->route($route, $this->invoice->id)->with('success', 'تم تعديل الفاتورة وتحديث المخزون بنجاح.');
-            
+
         } catch (\Exception $e) {
             session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function getPricingProperty(): array
+    {
+        try {
+            return app(InvoicePricingService::class)->calculate($this->lines, $this->discountType, $this->discountValue);
+        } catch (\Throwable) {
+            $subtotal = round((float) collect($this->lines)->sum(fn ($line) => (int) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0)), 2);
+
+            return ['subtotal' => $subtotal, 'discount_amount' => 0.0, 'total' => $subtotal];
         }
     }
 

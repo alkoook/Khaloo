@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Invoice extends Model
 {
@@ -14,22 +16,38 @@ class Invoice extends Model
 
     public const TYPE_RETURN = 'return';
 
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $fillable = [
         'partner_id',
         'original_invoice_id',
         'type',
+        'subtotal',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
         'total',
         'initial_paid',
         'amount_paid',
         'return_request_key',
+        'status',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
     ];
 
     protected function casts(): array
     {
         return [
+            'subtotal' => 'decimal:2',
+            'discount_value' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
             'total' => 'decimal:2',
             'initial_paid' => 'decimal:2',
             'amount_paid' => 'decimal:2',
+            'cancelled_at' => 'datetime',
         ];
     }
 
@@ -65,9 +83,24 @@ class Invoice extends Model
         return $this->belongsTo(Invoice::class, 'original_invoice_id');
     }
 
-    public function purchaseFundingSource(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function purchaseFundingSource(): HasOne
     {
         return $this->hasOne(PurchaseFundingSource::class);
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_ACTIVE);
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
     }
 
     public function getBalanceAttribute(): float

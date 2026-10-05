@@ -82,7 +82,7 @@
             </div>
             <aside class="quotation-totals-card" aria-label="إجماليات عرض السعر">
                 <div class="quotation-total-row"><span>المجموع</span><b>{{ number_format((float) $quotation->subtotal, 2) }} {{ $currencySymbol }}</b></div>
-                @if((float) $quotation->discount > 0)<div class="quotation-total-row quotation-discount"><span>الخصم</span><b>− {{ number_format((float) $quotation->discount, 2) }} {{ $currencySymbol }}</b></div>@endif
+                @if((float) $quotation->discount_amount > 0)<div class="quotation-total-row quotation-discount"><span>الحسم {{ $quotation->discount_type === 'percentage' ? '('.number_format((float)$quotation->discount_value,2).'%)' : '(ثابت)' }}</span><b>− {{ number_format((float) $quotation->discount_amount, 2) }} {{ $currencySymbol }}</b></div>@endif
                 <div class="quotation-total-final"><span>الإجمالي النهائي</span><strong>{{ number_format((float) $quotation->total, 2) }} <small>{{ $currencySymbol }}</small></strong></div>
             </aside>
         </section>

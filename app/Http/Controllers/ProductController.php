@@ -47,22 +47,21 @@ class ProductController extends Controller
     {
         $request->validate([
             'category_id' => ['required', 'exists:categories,id'],
-            'name' => ['nullable', 'string', 'max:255'],
+            'partner_id' => ['nullable', 'exists:partners,id'],
+            'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'purchase_price' => ['nullable', 'numeric', 'min:0'],
-            'sale_price' => ['nullable', 'numeric', 'min:0'],
-            'quantity' => ['required', 'integer', 'min:0'],
             'country_origin' => ['nullable', 'string', 'max:255'],
             'image' => ['nullable', 'image', 'max:10240'],
         ]);
 
         $data = [
             'category_id' => $request->input('category_id'),
+            'partner_id' => $request->input('partner_id'),
             'name' => $request->input('name') ?: null,
             'description' => $request->input('description') ?: null,
-            'purchase_price' => $request->filled('purchase_price') ? $request->input('purchase_price') : null,
-            'sale_price' => $request->filled('sale_price') ? $request->input('sale_price') : null,
-            'quantity' => (int) $request->input('quantity', 0),
+            'purchase_price' => null,
+            'sale_price' => null,
+            'quantity' => 0,
             'country_origin' => $request->input('country_origin') ?: null,
         ];
 
@@ -70,9 +69,7 @@ class ProductController extends Controller
             $data['image'] = $request->file('image')->store('products', 'public');
         }
 
-        $product = Product::create($data);
-
-        app(TelegramService::class)->notifyCreated('product', $product->name ?? 'منتج #'.$product->id);
+        Product::create($data);
 
         return redirect()->route('products.index')->with('success', 'تم إضافة المنتج.');
     }

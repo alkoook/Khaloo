@@ -19,17 +19,17 @@
 
     <section class="financial-hero-grid">
         <article class="financial-kpi"><small>المتبقي من أموال المبيعات</small><strong>{{ number_format($summary['cash_remaining'],2) }}</strong><span>حركة الفترة المسجلة</span></article>
-        <article class="financial-kpi"><small>صافي الربح التشغيلي</small><strong>{{ number_format($summary['net_profit'],2) }}</strong><span>لا يشمل المشتريات مباشرة</span></article>
-        <article class="financial-kpi"><small>صافي الوضع المالي المدعوم</small><strong>{{ number_format($summary['net_financial_position'],2) }}</strong><span>نقد تشغيلي + مخزون + جهات المال</span></article>
+        <article class="financial-kpi"><small>صافي الربح التشغيلي</small><strong>{{ $summary['net_profit'] === null ? 'غير موثوق' : number_format($summary['net_profit'],2) }}</strong><span>لا يشمل المشتريات مباشرة</span></article>
+        <article class="financial-kpi"><small>صافي الوضع المالي المدعوم</small><strong>{{ $summary['net_financial_position'] === null ? 'غير موثوق' : number_format($summary['net_financial_position'],2) }}</strong><span>نقد تشغيلي + مخزون + جهات المال</span></article>
     </section>
 
     <section class="financial-section-grid">
         <article class="workspace-card financial-card"><h2>الأداء المالي</h2><dl>
             <div><dt>صافي المبيعات</dt><dd>{{ number_format($summary['net_sales'],2) }}</dd></div>
-            <div><dt>تكلفة البضاعة المباعة</dt><dd>{{ number_format($summary['cogs'],2) }}</dd></div>
-            <div><dt>مجمل الربح</dt><dd>{{ number_format($summary['gross_profit'],2) }}</dd></div>
+            <div><dt>تكلفة البضاعة المباعة</dt><dd>{{ $summary['cogs'] === null ? 'غير موثوقة' : number_format($summary['cogs'],2) }}</dd></div>
+            <div><dt>مجمل الربح</dt><dd>{{ $summary['gross_profit'] === null ? 'غير موثوق' : number_format($summary['gross_profit'],2) }}</dd></div>
             <div><dt>المصاريف</dt><dd>{{ number_format($summary['expenses'],2) }}</dd></div>
-            <div class="emphasis"><dt>صافي الربح</dt><dd>{{ number_format($summary['net_profit'],2) }}</dd></div>
+            <div class="emphasis"><dt>صافي الربح</dt><dd>{{ $summary['net_profit'] === null ? 'غير موثوق' : number_format($summary['net_profit'],2) }}</dd></div>
             <div><dt>إجمالي المشتريات</dt><dd>{{ number_format($summary['purchases'],2) }}</dd></div>
         </dl><small>COGS من لقطة سعر الشراء في بند البيع. المرتجعات العائدة لفاتورة أقدم من الفترة تُعكس ضمن فترة المرتجع.</small></article>
         <article class="workspace-card financial-card"><h2>أين ذهبت الأموال؟</h2><dl>
@@ -46,7 +46,7 @@
         </dl></article>
         <article class="workspace-card financial-card"><h2>المشتريات والمخزون</h2><dl>
             <div><dt>إجمالي المشتريات للفترة</dt><dd>{{ number_format($summary['purchases'],2) }}</dd></div>
-            <div class="emphasis"><dt>قيمة المخزون الحالية بالتكلفة</dt><dd>{{ number_format($summary['inventory_value'],2) }}</dd></div>
+            <div class="emphasis"><dt>قيمة المخزون الحالية بالتكلفة</dt><dd>{{ $summary['inventory_value'] === null ? 'غير موثوقة' : number_format($summary['inventory_value'],2) }}</dd></div>
         </dl><small>القيمة الحالية تستخدم سعر الشراء الحالي للمنتج، وليست FIFO أو متوسطًا مرجحًا.</small></article>
         <article class="workspace-card financial-card"><h2>جهات المال</h2><dl>
             <div><dt>أموالنا لدى الجهات</dt><dd>{{ number_format($summary['money_at_parties'],2) }}</dd></div>
@@ -58,7 +58,8 @@
             <div><dt>مبالغ مستحقة للعملاء</dt><dd>{{ number_format($summary['customer_credits'],2) }}</dd></div>
             <div class="emphasis"><dt>المستحق للموردين</dt><dd>{{ number_format($summary['payables'],2) }}</dd></div>
         </dl></article>
-        <article class="workspace-card financial-card financial-position"><h2>المركز المالي الحالي</h2><strong>{{ number_format($summary['net_financial_position'],2) }}</strong><p>المتبقي من أموال المبيعات + قيمة المخزون الحالية + أموال المشروع لدى الجهات − الالتزامات تجاهها. لا يضاف صافي الربح مرة ثانية.</p></article>
+        <article class="workspace-card financial-card financial-position"><h2>المركز المالي الحالي</h2><strong>{{ $summary['net_financial_position'] === null ? 'غير موثوق' : number_format($summary['net_financial_position'],2) }}</strong><p>المتبقي من أموال المبيعات + قيمة المخزون الحالية + أموال المشروع لدى الجهات − الالتزامات تجاهها. لا يضاف صافي الربح مرة ثانية.</p></article>
+        @if($summary['unknown_cost_lines'] || $summary['unknown_inventory_count'])<article class="workspace-card"><strong>تنبيه تكلفة</strong><p>توجد تكلفة شراء غير موثقة؛ لذلك لم يفترض النظام تكلفة صفرية وأوقف الأرقام المتأثرة.</p></article>@endif
     </section>
 
     <section class="workspace-card financial-card"><h2>أرصدة جهات المال الحالية</h2><div class="table-shell"><table><thead><tr><th>الجهة</th><th>الرصيد</th><th>المعنى</th></tr></thead><tbody>@forelse($partyBalances as $row)<tr><td>{{ $row['party']->name }}</td><td>{{ number_format($row['balance'],2) }}</td><td>{{ $row['balance'] >= 0 ? 'أموال المشروع لدى الجهة' : 'التزام تجاه الجهة' }}</td></tr>@empty<tr><td colspan="3"><div class="empty-state">لا توجد جهات مال مسجلة.</div></td></tr>@endforelse</tbody></table></div></section>

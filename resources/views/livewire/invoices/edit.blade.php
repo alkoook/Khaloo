@@ -69,9 +69,11 @@
                     
                     <div>
                         <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">المبلغ المدفوع</label>
-                        <input type="number" step="0.01" wire:model="amountPaid" min="0" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                        <input type="number" step="0.01" wire:model="amountPaid" min="0" placeholder="غير مدفوع" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
                         @error('amountPaid') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
+                    <div><label class="block text-sm font-medium mb-1">نوع الحسم</label><select wire:model.live="discountType" class="w-full"><option value="fixed">مبلغ ثابت</option><option value="percentage">نسبة مئوية</option></select></div>
+                    <div><label class="block text-sm font-medium mb-1">قيمة الحسم</label><input type="number" min="0" step="0.01" wire:model.live="discountValue" placeholder="بدون حسم">@error('discountValue')<small class="field-error">{{ $message }}</small>@enderror</div>
                     
                     @php
                         $total = 0;
@@ -82,9 +84,10 @@
                     
                     <div class="pt-4 border-t space-y-3" style="border-color: var(--app-border);">
                         <div class="flex justify-between text-sm">
-                            <span style="color: var(--app-muted)">الإجمالي بعد التعديل:</span>
-                            <span class="font-medium" style="color: var(--app-text)">{{ number_format($total, 2) }}</span>
+                            <span style="color: var(--app-muted)">المجموع قبل الحسم:</span><span class="font-medium">{{ number_format($this->pricing['subtotal'], 2) }}</span>
                         </div>
+                        <div class="flex justify-between text-sm"><span>قيمة الحسم:</span><span>{{ number_format($this->pricing['discount_amount'], 2) }}</span></div>
+                        <div class="flex justify-between text-sm"><strong>الإجمالي بعد الحسم:</strong><strong>{{ number_format($this->pricing['total'], 2) }}</strong></div>
                     </div>
                 </div>
                 

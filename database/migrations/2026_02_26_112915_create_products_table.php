@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('partner_id')->nullable()->constrained()->nullOnDelete();
             $table->string('name')->nullable();
             $table->text('description')->nullable();
-            $table->decimal('purchase_price', 14, 2)->nullable();
+            $table->decimal('purchase_price', 14, 4)->nullable();
             $table->decimal('total_purchase_amount', 14, 2)->nullable();
             $table->decimal('paid_purchase_amount', 14, 2)->nullable();
             $table->decimal('sale_price', 14, 2)->nullable();

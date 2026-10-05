@@ -15,6 +15,7 @@ class TelegramController extends Controller
         $request->validate(['invoice_id' => ['required', 'exists:invoices,id']]);
 
         $invoice = Invoice::with(['partner', 'lines'])->findOrFail($request->invoice_id);
+        abort_if($invoice->isCancelled(), 409, 'لا يمكن إرسال فاتورة ملغاة.');
 
         $type = $invoice->type;
         $typeLabel = $type === 'sale' ? 'بيع' : 'شراء';

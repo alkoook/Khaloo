@@ -12,6 +12,9 @@
 @endphp
 
 <div class="invoice-view page-shell invoice-document">
+    @if($invoice->isCancelled())
+        <section class="workspace-card" style="border-color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,var(--surface))"><strong style="color:var(--danger)">هذه الفاتورة ملغاة</strong><p>{{ $invoice->cancellation_reason }}</p><small>أُلغيت في {{ $invoice->cancelled_at?->format('Y-m-d H:i') }} مع الاحتفاظ بكامل بياناتها لأغراض التدقيق.</small></section>
+    @endif
     <header class="workspace-card invoice-document__masthead">
         <div class="invoice-document__brand">
             @if($invoiceLogo)
@@ -40,12 +43,12 @@
         </div>
 
         <div class="invoice-actions invoice-document__actions">
-            @if(!$invoice->isReturn())
+            @if(!$invoice->isCancelled())
                 <a href="{{ route('invoices.receipt', $invoice) }}" target="_blank" class="print-button">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17h10v4H7zM5 17H3v-7h18v7h-2M17 12h1"/></svg><span>طباعة الإيصال</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17h10v4H7zM5 17H3v-7h18v7h-2M17 12h1"/></svg><span>{{ $invoice->isReturn() ? 'طباعة المرتجع' : 'طباعة الإيصال' }}</span>
                 </a>
             @endif
-            @if($invoice->isSale())
+            @if($invoice->isSale() && !$invoice->isCancelled())
                 <a href="{{ route('invoices.returns.create', ['invoice' => $invoice->id]) }}" class="secondary-button">إرجاع أصناف</a>
                 @if($invoice->returns->isEmpty())<a href="{{ route('invoices.edit', ['invoice' => $invoice->id]) }}" class="secondary-button">تعديل</a>@endif
             @endif
@@ -67,7 +70,7 @@
         </article>
 
         <div class="invoice-money-grid invoice-document__summary">
-            <article><small>الإجمالي</small><strong>{{ number_format((float) $invoice->total, 2) }} <em>{{ $currencySymbol }}</em></strong></article>
+            <article><small>الإجمالي بعد الحسم</small><strong>{{ number_format((float) $invoice->total, 2) }} <em>{{ $currencySymbol }}</em></strong></article>
             <article class="paid"><small>المدفوع</small><strong>{{ number_format((float) $invoice->amount_paid, 2) }} <em>{{ $currencySymbol }}</em></strong></article>
             <article class="remaining"><small>المتبقي</small><strong>{{ number_format((float) $invoice->remaining, 2) }} <em>{{ $currencySymbol }}</em></strong></article>
             @unless($invoice->isReturn())<article><small>رصيد الطرف الحالي</small><strong>{{ number_format((float) $currentPartnerBalance, 2) }} <em>{{ $currencySymbol }}</em></strong></article>@endunless
@@ -76,13 +79,14 @@
 
     <section class="workspace-card invoice-lines-view invoice-document__lines">
         <div class="card-heading"><div><span class="eyebrow">تفاصيل المستند</span><h2>بنود الفاتورة</h2><p>{{ $invoice->lines->count() }} صنف · {{ number_format((float) $invoice->lines->sum('quantity')) }} وحدة</p></div><strong class="invoice-document__lines-total">{{ number_format((float) $invoice->total, 2) }} {{ $currencySymbol }}</strong></div>
-        <div class="table-shell"><table><thead><tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>إجمالي السطر</th></tr></thead><tbody>@foreach($invoice->lines as $line)<tr><td><strong>{{ $line->product_name }}</strong><small>رقم المنتج: {{ $line->product_id ?: 'غير متوفر' }}</small></td><td>{{ number_format((float) $line->quantity) }}</td><td>{{ number_format((float) $line->unit_price, 2) }}</td><td><strong>{{ number_format((float) $line->line_total, 2) }}</strong></td></tr>@endforeach</tbody></table></div>
+        <div class="table-shell"><table><thead><tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>قبل الحسم</th><th>حسم السطر</th><th>صافي السطر</th></tr></thead><tbody>@foreach($invoice->lines as $line)<tr><td><strong>{{ $line->product_name }}</strong><small>رقم المنتج: {{ $line->product_id ?: 'غير متوفر' }}</small></td><td>{{ number_format((float) $line->quantity) }}</td><td>{{ number_format((float) $line->unit_price, 2) }}</td><td>{{ number_format((float) $line->line_total, 2) }}</td><td>{{ number_format((float) $line->discount_amount, 2) }}</td><td><strong>{{ number_format((float) ($line->net_line_total ?? $line->line_total), 2) }}</strong></td></tr>@endforeach</tbody></table></div>
+        @if((float)$invoice->discount_amount>0)<div class="workspace-card"><div class="invoice-meta-list"><span>المجموع قبل الحسم: <strong>{{ number_format((float)$invoice->subtotal,2) }}</strong></span><span>الحسم: <strong>{{ number_format((float)$invoice->discount_amount,2) }}{{ $invoice->discount_type==='percentage'?' ('.number_format((float)$invoice->discount_value,2).'٪)':'' }}</strong></span><span>الإجمالي النهائي: <strong>{{ number_format((float)$invoice->total,2) }}</strong></span></div></div>@endif
     </section>
 
     @if($invoice->isSale())
         <section class="invoice-foot-grid">
             @if($invoice->returns->isNotEmpty())<article class="workspace-card"><div class="card-heading"><div><h2>المرتجعات المرتبطة</h2><p>حركات خفّضت قيمة الفاتورة الأصلية</p></div></div>@foreach($invoice->returns as $return)<a class="return-row" href="{{ route('invoices.sales.show', $return) }}"><span>مرتجع #{{ $return->id }} · {{ $return->created_at->format('Y-m-d') }}</span><strong>{{ number_format((float) $return->total, 2) }} {{ $currencySymbol }}</strong></a>@endforeach</article>@endif
-            <article class="workspace-card profit-card"><small>صافي ربح الفاتورة</small><strong>{{ number_format($invoice->lines->sum(fn($line) => (float) $line->quantity * ((float) $line->unit_price - (float) $line->purchase_price)), 2) }} <em>{{ $currencySymbol }}</em></strong><p>محسوب من أسعار التكلفة المحفوظة مع البنود.</p></article>
+            <article class="workspace-card profit-card"><small>صافي ربح الفاتورة</small>@if($invoice->lines->contains(fn($line)=>$line->purchase_price===null))<strong>غير موثوق</strong><p>يوجد بند دون تكلفة شراء موثقة.</p>@else<strong>{{ number_format($invoice->lines->sum(fn($line) => (float)($line->net_line_total ?? $line->line_total) - ((float)$line->quantity * (float)$line->purchase_price)), 2) }} <em>{{ $currencySymbol }}</em></strong><p>صافي المبيعات ناقص تكلفة البنود المحفوظة.</p>@endif</article>
         </section>
     @endif
 </div>

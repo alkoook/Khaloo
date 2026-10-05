@@ -19,39 +19,73 @@ class ReturnService
      */
     public function processSalesReturn(Invoice $originalInvoice, float $refundAmount, array $returnQuantities, ?string $requestKey = null): Invoice
     {
-        if (! $originalInvoice->isSale()) throw new Exception('يمكن إرجاع فواتير المبيعات فقط.');
-        if (! is_finite($refundAmount) || $refundAmount < 0) throw new Exception('قيمة الاسترداد لا يمكن أن تكون سالبة.');
-        if ($requestKey !== null && ! Str::isUuid($requestKey)) throw new Exception('طلب المرتجع غير صالح.');
+        if (! $originalInvoice->isSale()) {
+            throw new Exception('يمكن إرجاع فواتير المبيعات فقط.');
+        }
+        if (! is_finite($refundAmount) || $refundAmount < 0) {
+            throw new Exception('قيمة الاسترداد لا يمكن أن تكون سالبة.');
+        }
+        if ($requestKey !== null && ! Str::isUuid($requestKey)) {
+            throw new Exception('طلب المرتجع غير صالح.');
+        }
         $refundAmount = round($refundAmount, 2);
 
         [$invoice, $linesData, $replayed] = DB::transaction(function () use ($originalInvoice, $refundAmount, $returnQuantities, $requestKey): array {
             $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($originalInvoice->id);
+            if ($lockedInvoice->isCancelled()) {
+                throw new Exception('لا يمكن إنشاء مرتجع لفاتورة ملغاة.');
+            }
             if ($requestKey !== null) {
                 $existing = Invoice::query()->where('return_request_key', $requestKey)->first();
                 if ($existing) {
-                    if ($existing->original_invoice_id !== $lockedInvoice->id) throw new Exception('طلب المرتجع غير صالح.');
+                    if ($existing->original_invoice_id !== $lockedInvoice->id) {
+                        throw new Exception('طلب المرتجع غير صالح.');
+                    }
+
                     return [$existing, [], true];
                 }
             }
             $lines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
+            $originalSubtotalBefore = (float) $lockedInvoice->subtotal > 0 ? (float) $lockedInvoice->subtotal : (float) $lines->sum('line_total');
             $items = [];
+            $subtotal = 0.0;
             $total = 0.0;
 
             foreach ($lines as $line) {
                 $rawQuantity = $returnQuantities[$line->id] ?? 0;
-                if (filter_var($rawQuantity, FILTER_VALIDATE_INT) === false) throw new Exception('كمية المرتجع يجب أن تكون عددًا صحيحًا.');
+                if (filter_var($rawQuantity, FILTER_VALIDATE_INT) === false) {
+                    throw new Exception('كمية المرتجع يجب أن تكون عددًا صحيحًا.');
+                }
                 $quantity = (int) $rawQuantity;
-                if ($quantity < 0) throw new Exception('كمية المرتجع غير صالحة.');
-                if ($quantity > $line->quantity) throw new Exception("الكمية المرتجعة من {$line->product_name} أكبر من الكمية المتبقية في الفاتورة.");
-                if ($quantity === 0) continue;
+                if ($quantity < 0) {
+                    throw new Exception('كمية المرتجع غير صالحة.');
+                }
+                if ($quantity > $line->quantity) {
+                    throw new Exception("الكمية المرتجعة من {$line->product_name} أكبر من الكمية المتبقية في الفاتورة.");
+                }
+                if ($quantity === 0) {
+                    continue;
+                }
                 $lineTotal = round($quantity * (float) $line->unit_price, 2);
-                $items[] = compact('line', 'quantity', 'lineTotal');
-                $total += $lineTotal;
+                $currentNet = $line->net_line_total === null ? (float) $line->line_total : (float) $line->net_line_total;
+                $netLineTotal = $quantity === (int) $line->quantity
+                    ? round($currentNet, 2)
+                    : round($currentNet * $quantity / (int) $line->quantity, 2);
+                $lineDiscount = round($lineTotal - $netLineTotal, 2);
+                $items[] = compact('line', 'quantity', 'lineTotal', 'lineDiscount', 'netLineTotal');
+                $subtotal += $lineTotal;
+                $total += $netLineTotal;
             }
 
-            if ($items === []) throw new Exception('حدد كمية لمنتج واحد على الأقل.');
+            if ($items === []) {
+                throw new Exception('حدد كمية لمنتج واحد على الأقل.');
+            }
+            $subtotal = round($subtotal, 2);
             $total = round($total, 2);
-            if ($refundAmount > $total) throw new Exception('الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
+            $discountAmount = round($subtotal - $total, 2);
+            if ($refundAmount > $total) {
+                throw new Exception('الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
+            }
 
             $debtBefore = max(0, round((float) $lockedInvoice->total - (float) $lockedInvoice->amount_paid, 2));
             if ($lockedInvoice->partner_id) {
@@ -59,12 +93,18 @@ class ReturnService
                 $debtBefore = max(0, round((float) $partner->sales_due - (float) $partner->incoming_total + (float) $partner->outgoing_total, 2));
             }
             $maxRefund = max(0, round($total - $debtBefore, 2));
-            if ($refundAmount > $maxRefund) throw new Exception('الاسترداد النقدي أكبر من المبلغ المستحق للعميل بعد تسوية الدين.');
+            if ($refundAmount > $maxRefund) {
+                throw new Exception('الاسترداد النقدي أكبر من المبلغ المستحق للعميل بعد تسوية الدين.');
+            }
 
             $returnInvoice = Invoice::create([
                 'partner_id' => $lockedInvoice->partner_id,
                 'original_invoice_id' => $lockedInvoice->id,
                 'type' => Invoice::TYPE_RETURN,
+                'subtotal' => $subtotal,
+                'discount_type' => $discountAmount > 0 ? 'fixed' : null,
+                'discount_value' => $discountAmount,
+                'discount_amount' => $discountAmount,
                 'total' => $total,
                 'initial_paid' => $refundAmount,
                 'amount_paid' => $refundAmount,
@@ -76,6 +116,8 @@ class ReturnService
                 $line = $item['line'];
                 $quantity = $item['quantity'];
                 $lineTotal = $item['lineTotal'];
+                $lineDiscount = $item['lineDiscount'];
+                $netLineTotal = $item['netLineTotal'];
                 $product = Product::query()->lockForUpdate()->findOrFail($line->product_id);
                 InvoiceLine::create([
                     'invoice_id' => $returnInvoice->id,
@@ -86,22 +128,32 @@ class ReturnService
                     'purchase_price' => $line->purchase_price,
                     'sale_price' => $line->sale_price,
                     'line_total' => $lineTotal,
+                    'discount_amount' => $lineDiscount,
+                    'net_line_total' => $netLineTotal,
                 ]);
                 $product->increment('quantity', $quantity);
                 $line->update([
                     'quantity' => $line->quantity - $quantity,
                     'line_total' => round((float) $line->line_total - $lineTotal, 2),
+                    'discount_amount' => round((float) $line->discount_amount - $lineDiscount, 2),
+                    'net_line_total' => round(($line->net_line_total === null ? (float) $line->line_total : (float) $line->net_line_total) - $netLineTotal, 2),
                 ]);
                 $notificationLines[] = [
                     'product_id' => $product->id,
                     'product_name' => $line->product_name,
                     'quantity' => $quantity,
                     'unit_price' => (float) $line->unit_price,
-                    'line_total' => $lineTotal,
+                    'line_total' => $netLineTotal,
                 ];
             }
 
-            $lockedInvoice->update(['total' => round((float) $lockedInvoice->total - $total, 2)]);
+            $remainingDiscount = round((float) $lockedInvoice->discount_amount - $discountAmount, 2);
+            $lockedInvoice->update([
+                'subtotal' => round($originalSubtotalBefore - $subtotal, 2),
+                'discount_amount' => $remainingDiscount,
+                'discount_value' => $lockedInvoice->discount_type === 'fixed' ? $remainingDiscount : $lockedInvoice->discount_value,
+                'total' => round((float) $lockedInvoice->total - $total, 2),
+            ]);
             if ($refundAmount > 0 && $lockedInvoice->partner_id) {
                 LedgerSettlement::create([
                     'partner_id' => $lockedInvoice->partner_id,
@@ -115,7 +167,9 @@ class ReturnService
             return [$returnInvoice->load('partner'), $notificationLines, false];
         });
 
-        if ($replayed) return $invoice;
+        if ($replayed) {
+            return $invoice;
+        }
 
         app(TelegramService::class)->sendInvoiceNotification(
             Invoice::TYPE_RETURN,
@@ -127,7 +181,9 @@ class ReturnService
             $linesData,
         );
         app(AlertService::class)->evaluateProducts(collect($linesData)->pluck('product_id')->filter());
-        if ($invoice->partner_id) app(AlertService::class)->evaluatePartners($invoice->partner_id);
+        if ($invoice->partner_id) {
+            app(AlertService::class)->evaluatePartners($invoice->partner_id);
+        }
 
         return $invoice;
     }

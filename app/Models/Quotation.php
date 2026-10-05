@@ -12,7 +12,7 @@ class Quotation extends Model
 
     protected $fillable = [
         'number', 'partner_id', 'customer_name', 'customer_phone', 'quotation_date',
-        'expires_at', 'status', 'subtotal', 'discount', 'total', 'notes', 'converted_invoice_id',
+        'expires_at', 'status', 'subtotal', 'discount_type', 'discount_value', 'discount_amount', 'discount', 'total', 'notes', 'converted_invoice_id',
     ];
 
     protected function casts(): array
@@ -21,14 +21,27 @@ class Quotation extends Model
             'quotation_date' => 'date',
             'expires_at' => 'date',
             'subtotal' => 'decimal:2',
+            'discount_value' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
             'discount' => 'decimal:2',
             'total' => 'decimal:2',
         ];
     }
 
-    public function partner(): BelongsTo { return $this->belongsTo(Partner::class); }
-    public function lines(): HasMany { return $this->hasMany(QuotationLine::class); }
-    public function convertedInvoice(): BelongsTo { return $this->belongsTo(Invoice::class, 'converted_invoice_id'); }
+    public function partner(): BelongsTo
+    {
+        return $this->belongsTo(Partner::class);
+    }
+
+    public function lines(): HasMany
+    {
+        return $this->hasMany(QuotationLine::class);
+    }
+
+    public function convertedInvoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'converted_invoice_id');
+    }
 
     public function getDisplayCustomerAttribute(): string
     {

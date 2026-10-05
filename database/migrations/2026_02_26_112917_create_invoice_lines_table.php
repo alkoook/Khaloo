@@ -15,9 +15,11 @@ return new class extends Migration
             $table->string('product_name');
             $table->unsignedInteger('quantity');
             $table->decimal('unit_price', 14, 2);
-            $table->decimal('purchase_price', 14, 2)->nullable();
+            $table->decimal('purchase_price', 14, 4)->nullable();
             $table->decimal('sale_price', 14, 2)->nullable();
             $table->decimal('line_total', 14, 2);
+            $table->decimal('discount_amount', 14, 2)->default(0);
+            $table->decimal('net_line_total', 14, 2)->nullable();
             $table->timestamps();
         });
     }

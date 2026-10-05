@@ -16,6 +16,8 @@ class InvoiceLine extends Model
         'purchase_price',
         'sale_price',
         'line_total',
+        'discount_amount',
+        'net_line_total',
     ];
 
     protected function casts(): array
@@ -23,9 +25,11 @@ class InvoiceLine extends Model
         return [
             'quantity' => 'integer',
             'unit_price' => 'decimal:2',
-            'purchase_price' => 'decimal:2',
+            'purchase_price' => 'decimal:4',
             'sale_price' => 'decimal:2',
             'line_total' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
+            'net_line_total' => 'decimal:2',
         ];
     }
 

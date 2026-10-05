@@ -2,17 +2,18 @@
 
 namespace App\Livewire\Payments;
 
-use App\Models\Invoice;
 use App\Models\LedgerSettlement;
 use App\Models\Partner;
-use Illuminate\Support\Facades\DB;
+use App\Services\AlertService;
+use App\Services\FinancialService;
+use App\Services\SettingsService;
+use App\Services\TelegramService;
+use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
-use App\Services\FinancialService;
-use App\Services\SettingsService;
-use App\Services\TelegramService;
 
 #[Layout('layouts.app')]
 #[Title('سجل الدفعات')]
@@ -36,6 +37,10 @@ class Register extends Component
 
     public string $settlementType = 'incoming';
 
+    public string $notes = '';
+
+    public bool $amountTouched = false;
+
     protected $queryString = ['typeFilter' => ['except' => ''], 'dateFrom' => ['except' => ''], 'dateTo' => ['except' => '']];
 
     public function mount(): void
@@ -49,11 +54,37 @@ class Register extends Component
     public function updatedSettlementType(): void
     {
         $this->partnerId = null;
+        $this->amount = '';
+        $this->amountTouched = false;
     }
 
-    public function updatedTypeFilter(): void { $this->resetPage(); }
-    public function updatedDateFrom(): void { $this->resetPage(); }
-    public function updatedDateTo(): void { $this->resetPage(); }
+    public function updatedPartnerId(): void
+    {
+        if (! $this->partnerId || $this->amountTouched) {
+            return;
+        }
+        $this->amount = $this->currentBalance > 0 ? number_format($this->currentBalance, 2, '.', '') : '';
+    }
+
+    public function updatedAmount(): void
+    {
+        $this->amountTouched = true;
+    }
+
+    public function updatedTypeFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedDateFrom(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedDateTo(): void
+    {
+        $this->resetPage();
+    }
 
     public function openAddModal(): void
     {
@@ -62,6 +93,8 @@ class Register extends Component
         $this->amount = '';
         $this->settlementDate = now()->format('Y-m-d');
         $this->settlementType = 'incoming';
+        $this->notes = '';
+        $this->amountTouched = false;
         $this->showAddModal = true;
     }
 
@@ -77,6 +110,7 @@ class Register extends Component
             'amount' => ['required', 'numeric', 'min:0.01'],
             'settlementDate' => ['required', 'date'],
             'settlementType' => ['required', 'in:incoming,outgoing'],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ], [
             'partnerId.required' => 'اختر الزبون أو المورد.',
             'amount.required' => 'أدخل قيمة الدفعة.',
@@ -99,14 +133,15 @@ class Register extends Component
         // The user requested that payments be kept separate and not modify existing invoices.
         // So we no longer iterate through invoices to update 'amount_paid'.
         // Everything is tracked via LedgerSettlement.
-        
-        LedgerSettlement::create([
-            'partner_id' => $this->partnerId,
-            'amount' => round($amount, 2),
-            'type' => $this->settlementType === 'incoming' ? LedgerSettlement::TYPE_INCOMING : LedgerSettlement::TYPE_OUTGOING,
-            'settlement_date' => $this->settlementDate,
-        ]);
-        app(\App\Services\AlertService::class)->evaluatePartners((int) $this->partnerId);
+
+        try {
+            $financials->recordSettlement((int) $this->partnerId, $side, $amount, $this->settlementDate, $this->notes);
+        } catch (ValidationException $exception) {
+            $this->addError('amount', collect($exception->errors())->flatten()->first());
+
+            return;
+        }
+        app(AlertService::class)->evaluatePartners((int) $this->partnerId);
         if (app(SettingsService::class)->get('telegram_payments', true)) {
             app(TelegramService::class)->sendMessage("💳 دفعة جديدة\nالطرف: {$partner?->name}\nالمبلغ: ".number_format($amount, 2));
         }
@@ -118,15 +153,35 @@ class Register extends Component
     /**
      * شركاء لديهم رصيد (اللي النا أو اللي علينا) حسب نوع الدفعة المختار.
      *
-     * @return \Illuminate\Support\Collection<int, Partner>
+     * @return Collection<int, Partner>
      */
-    public function getPartnersWithBalanceProperty(): \Illuminate\Support\Collection
+    public function getPartnersWithBalanceProperty(): Collection
     {
         $financials = app(FinancialService::class);
         $side = $this->settlementType === 'incoming' ? 'receivable' : 'payable';
+
         return $financials->partnerBalancesQuery()->get()
             ->filter(fn (Partner $partner) => $financials->balanceFor($partner, $side) > 0)
             ->sortBy('name')->values();
+    }
+
+    public function getCurrentBalanceProperty(): float
+    {
+        if (! $this->partnerId) {
+            return 0.0;
+        }
+        $financials = app(FinancialService::class);
+        $partner = $financials->partnerBalancesQuery()->find($this->partnerId);
+        if (! $partner) {
+            return 0.0;
+        }
+
+        return $financials->balanceFor($partner, $this->settlementType === 'incoming' ? 'receivable' : 'payable');
+    }
+
+    public function getExpectedBalanceProperty(): float
+    {
+        return max(0, round($this->currentBalance - (float) ($this->amount === '' ? 0 : $this->amount), 2));
     }
 
     public function render()

@@ -21,8 +21,12 @@ class InvoiceController extends Controller
 
     public function receipt(Invoice $invoice, SettingsService $settings): View
     {
-        abort_unless($invoice->isSale()||$invoice->isPurchase(),404);
-        return view('invoices.receipt',['invoice'=>$invoice->load(['partner','lines']),'settings'=>$settings]);
+        abort_unless($invoice->isSale() || $invoice->isPurchase() || $invoice->isReturn(), 404);
+
+        return view('invoices.receipt', [
+            'invoice' => $invoice->load(['partner', 'lines', 'originalInvoice']),
+            'settings' => $settings,
+        ]);
     }
 
     public function createSales(): View { return view('invoices.sales.create'); }

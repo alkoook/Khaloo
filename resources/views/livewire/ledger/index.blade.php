@@ -32,13 +32,15 @@
 
     {{-- Modal إضافة دفعة --}}
     @if($showAddPaymentModal)
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.5);" wire:key="modal-add-payment" wire:click.self="closeAddPaymentModal">
-        <div class="rounded-xl p-6 max-w-md w-full" style="background: var(--app-card); border: 1px solid var(--app-border);">
-            <h3 class="text-lg font-semibold mb-4" style="color: var(--app-primary);">إضافة دفعة {{ $tab === 'receivable' ? '(اللي النا)' : '(اللي علينا)' }}</h3>
-            <form wire:submit.prevent="addPayment" class="space-y-4">
+    @teleport('body')
+    <div class="fixed inset-0 z-50 flex justify-center p-4 payment-modal-backdrop" style="background: rgba(0,0,0,0.5);" wire:key="modal-add-payment" wire:click.self="closeAddPaymentModal" wire:keydown.escape.window="closeAddPaymentModal">
+        <div class="rounded-xl p-6 max-w-md w-full payment-modal-panel" style="background: var(--app-card); border: 1px solid var(--app-border);">
+            <h3 class="text-lg font-semibold mb-4 payment-modal-header" style="color: var(--app-primary);">إضافة دفعة {{ $tab === 'receivable' ? '(اللي النا)' : '(اللي علينا)' }}</h3>
+            <form wire:submit.prevent="addPayment" class="payment-modal-form">
+                <div class="space-y-4 payment-modal-body">
                 <div>
                     <label for="paymentPartnerId" class="block text-sm font-medium mb-1">الطرف *</label>
-                    <select id="paymentPartnerId" wire:model="paymentPartnerId" required class="w-full rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                    <select id="paymentPartnerId" wire:model.live="paymentPartnerId" required class="w-full rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
                         <option value="">اختر الطرف</option>
                         @foreach($paymentPartners as $p)
                             <option value="{{ $p->id }}">{{ $p->name ?? '—' }}</option>
@@ -51,13 +53,15 @@
                         <p class="text-sm mt-1" style="color: var(--app-muted);">لا يوجد أطراف بـ رصيد في هذا التبويب.</p>
                     @endif
                 </div>
+                @if($paymentPartnerId)<div class="applied-filters"><div><span>الرصيد الحالي</span><b>{{ number_format($this->currentPaymentBalance,2) }}</b></div><div><span>الرصيد المتوقع بعد الدفعة</span><b>{{ number_format($this->expectedPaymentBalance,2) }}</b></div></div>@endif
                 <div>
                     <label for="paymentAmount" class="block text-sm font-medium mb-1">المبلغ *</label>
-                    <input type="number" id="paymentAmount" wire:model="paymentAmount" step="0.01" min="0.01" required placeholder="0.00" class="w-full rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                    <input type="number" id="paymentAmount" wire:model="paymentAmount" step="0.01" min="0.01" required placeholder="أدخل المبلغ" class="w-full rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
                     @error('paymentAmount')
                         <p class="text-sm text-red-500 mt-1">{{ $message }}</p>
                     @enderror
                 </div>
+                <div><label for="paymentNotes" class="block text-sm font-medium mb-1">ملاحظة اختيارية</label><textarea id="paymentNotes" wire:model="paymentNotes" maxlength="1000" class="w-full rounded-lg border px-4 py-2" style="background:var(--app-bg);border-color:var(--app-border);color:var(--app-text)"></textarea></div>
                 <div>
                     <label for="paymentDate" class="block text-sm font-medium mb-1">تاريخ الدفعة *</label>
                     <input type="date" id="paymentDate" wire:model="paymentDate" required class="w-full rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
@@ -65,13 +69,15 @@
                         <p class="text-sm text-red-500 mt-1">{{ $message }}</p>
                     @enderror
                 </div>
-                <div class="flex gap-2 justify-end">
+                </div>
+                <div class="flex gap-2 justify-end payment-modal-actions">
                     <button type="button" wire:click="closeAddPaymentModal" class="px-4 py-2 rounded-lg" style="background: var(--app-bg); color: var(--app-text); border: 1px solid var(--app-border);">إلغاء</button>
                     <button type="submit" class="px-4 py-2 rounded-lg text-white font-medium" style="background: var(--app-primary);" @if($paymentPartners->isEmpty()) disabled @endif>إضافة</button>
                 </div>
             </form>
         </div>
     </div>
+    @endteleport
     @endif
     <div class="overflow-x-auto">
         <table class="w-full text-right text-sm">
@@ -93,6 +99,7 @@
                         <td class="px-4 py-3">
                             @if($row['partner'])
                             <div class="flex items-center gap-2">
+                                <button type="button" wire:click="showStatement({{ $row['partner']->id }})" class="ghost-button" title="عرض كشف الحركات">الحركات</button>
                             <form method="POST" action="{{ route('telegram.send-ledger') }}" class="inline">
                                 @csrf
                                 <input type="hidden" name="partner_id" value="{{ $row['partner']->id }}">
@@ -126,6 +133,7 @@
                         <td class="px-4 py-3">
                             @if($row['partner'])
                             <div class="flex items-center gap-2">
+                                <button type="button" wire:click="showStatement({{ $row['partner']->id }})" class="ghost-button" title="عرض كشف الحركات">الحركات</button>
                             <form method="POST" action="{{ route('telegram.send-ledger') }}" class="inline">
                                 @csrf
                                 <input type="hidden" name="partner_id" value="{{ $row['partner']->id }}">
@@ -153,4 +161,5 @@
         </table>
     </div>
     <div class="p-4">{{ ($tab === 'receivable' ? $receivable : $payable)->links() }}</div>
+    @if($statementPartner)<div class="modal-backdrop" wire:click.self="closeStatement"><section class="workspace-card financial-movement-modal" style="width:min(980px,100%)"><header><div><h2>حركات {{ $statementPartner->name }}</h2><small>كل فاتورة ودفعة ومرتجع مع الرصيد الناتج بعد الحركة.</small></div><button type="button" class="icon-button" wire:click="closeStatement">×</button></header><div class="table-shell"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>المرجع</th><th>الوصف</th><th>قيمة الحركة</th><th>المدفوع/المستلم</th><th>الرصيد بعد الحركة</th></tr></thead><tbody>@forelse($statementRows as $movement)<tr><td>{{ $movement['date']->format('Y-m-d') }}</td><td>{{ $movement['type'] }}</td><td>{{ $movement['reference'] }}</td><td>{{ $movement['description'] }}</td><td>{{ number_format($movement['charge'],2) }}</td><td>{{ number_format($movement['payment'],2) }}</td><td><strong>{{ number_format($movement['balance'],2) }}</strong></td></tr>@empty<tr><td colspan="7"><div class="empty-state">لا توجد حركات ضمن الفترة.</div></td></tr>@endforelse</tbody></table></div></section></div>@endif
 </div>

@@ -16,6 +16,10 @@ return new class extends Migration
             $table->foreignId('partner_id')->nullable()->constrained()->restrictOnDelete();
             $table->foreignId('original_invoice_id')->nullable()->constrained('invoices')->nullOnDelete();
             $table->string('type')->index();
+            $table->decimal('subtotal', 14, 2)->default(0);
+            $table->string('discount_type')->nullable();
+            $table->decimal('discount_value', 14, 2)->default(0);
+            $table->decimal('discount_amount', 14, 2)->default(0);
             $table->decimal('total', 14, 2)->default(0);
             $table->decimal('initial_paid', 14, 2)->default(0);
             $table->decimal('amount_paid', 14, 2)->default(0);

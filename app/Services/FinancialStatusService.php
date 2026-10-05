@@ -12,7 +12,6 @@ use App\Models\Partner;
 use App\Models\Product;
 use App\Models\PurchaseFundingSource;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 
 class FinancialStatusService
 {
@@ -27,11 +26,13 @@ class FinancialStatusService
         $purchases = $this->invoiceTotal(Invoice::TYPE_PURCHASE, $from, $to);
         $purchasesPaid = $this->invoicePaid(Invoice::TYPE_PURCHASE, $from, $to);
         $crossPeriodReturns = $this->crossPeriodReturns($from, $to);
-        $cogs = $this->salesCost($from, $to) - $crossPeriodReturns['cost'];
+        $costData = $this->salesCost($from, $to);
+        $unknownCostLines = $costData['unknown_count'] + $crossPeriodReturns['unknown_count'];
+        $cogs = $unknownCostLines === 0 ? $costData['total'] - $crossPeriodReturns['cost'] : null;
         $netSales = $sales - $crossPeriodReturns['total'];
         $expenses = $this->sumExpenses($from, $to);
-        $grossProfit = $netSales - $cogs;
-        $netProfit = $grossProfit - $expenses;
+        $grossProfit = $cogs === null ? null : $netSales - $cogs;
+        $netProfit = $grossProfit === null ? null : $grossProfit - $expenses;
 
         $customerPayments = $this->settlementsForPartnerType('customer', LedgerSettlement::TYPE_INCOMING, $from, $to);
         $customerRefunds = $this->settlementsForPartnerType('customer', LedgerSettlement::TYPE_OUTGOING, $from, $to);
@@ -46,18 +47,19 @@ class FinancialStatusService
             - $movementCash['owner_withdrawals'] + $movementCash['from_parties'];
         $cashRemaining += $supplierRefunds;
 
-        $inventoryValue = (float) Product::query()
-            ->selectRaw('COALESCE(SUM(quantity * COALESCE(purchase_price, 0)), 0) as total')
-            ->value('total');
+        $unknownInventoryCount = Product::query()->where('quantity', '>', 0)->whereNull('purchase_price')->count();
+        $inventoryValue = $unknownInventoryCount === 0
+            ? (float) Product::query()->selectRaw('COALESCE(SUM(quantity * purchase_price), 0) as total')->value('total')
+            : null;
         $partyBalances = $this->moneyPartyBalances();
         $partnerBalances = $this->partnerBalances();
 
         return [
             'net_sales' => round($netSales, 2),
-            'cogs' => round($cogs, 2),
-            'gross_profit' => round($grossProfit, 2),
+            'cogs' => $cogs === null ? null : round($cogs, 2),
+            'gross_profit' => $grossProfit === null ? null : round($grossProfit, 2),
             'expenses' => round($expenses, 2),
-            'net_profit' => round($netProfit, 2),
+            'net_profit' => $netProfit === null ? null : round($netProfit, 2),
             'purchases' => round($purchases, 2),
             'sales_collected' => round($salesCollectedAtIssue + $customerPayments, 2),
             'additional_collections' => round($customerPayments, 2),
@@ -70,7 +72,7 @@ class FinancialStatusService
             'money_from_parties' => round($movementCash['from_parties'], 2),
             'owner_withdrawals' => round($movementCash['owner_withdrawals'], 2),
             'cash_remaining' => round($cashRemaining, 2),
-            'inventory_value' => round($inventoryValue, 2),
+            'inventory_value' => $inventoryValue === null ? null : round($inventoryValue, 2),
             'money_at_parties' => $partyBalances['assets'],
             'money_party_liabilities' => $partyBalances['liabilities'],
             'money_party_net' => $partyBalances['net'],
@@ -78,7 +80,9 @@ class FinancialStatusService
             'receivables' => $partnerBalances['receivables'],
             'customer_credits' => $partnerBalances['customer_credits'],
             'payables' => $partnerBalances['payables'],
-            'net_financial_position' => round($cashRemaining + $inventoryValue + $partyBalances['assets'] - $partyBalances['liabilities'], 2),
+            'net_financial_position' => $inventoryValue === null ? null : round($cashRemaining + $inventoryValue + $partyBalances['assets'] - $partyBalances['liabilities'], 2),
+            'unknown_cost_lines' => $unknownCostLines,
+            'unknown_inventory_count' => $unknownInventoryCount,
             'unclassified_count' => $movementCash['unclassified_count'],
             'unclassified_amount' => $movementCash['unclassified_amount'],
             'cross_period_returns' => round($crossPeriodReturns['total'], 2),
@@ -100,7 +104,8 @@ class FinancialStatusService
             [MoneyPartyMovement::DIRECTION_TO_PARTY]
         )->value('total');
 
-        $funding = PurchaseFundingSource::query()
+        $funding = PurchaseFundingSource::query()->join('invoices', 'invoices.id', '=', 'purchase_funding_sources.invoice_id')
+            ->where('invoices.status', Invoice::STATUS_ACTIVE)
             ->where('money_party_id', $partyId)
             ->when($lock, fn (Builder $query) => $query->lockForUpdate())
             ->sum('amount_base_currency');
@@ -121,8 +126,10 @@ class FinancialStatusService
                 [MoneyPartyMovement::DIRECTION_TO_PARTY]
             )->groupBy('money_party_id')->pluck('total', 'money_party_id');
         $fundingByParty = PurchaseFundingSource::query()
-            ->selectRaw('money_party_id, COALESCE(SUM(amount_base_currency), 0) as total')
-            ->groupBy('money_party_id')->pluck('total', 'money_party_id');
+            ->join('invoices', 'invoices.id', '=', 'purchase_funding_sources.invoice_id')
+            ->where('invoices.status', Invoice::STATUS_ACTIVE)
+            ->selectRaw('purchase_funding_sources.money_party_id, COALESCE(SUM(purchase_funding_sources.amount_base_currency), 0) as total')
+            ->groupBy('purchase_funding_sources.money_party_id')->pluck('total', 'purchase_funding_sources.money_party_id');
         $assets = 0.0;
         $liabilities = 0.0;
         $rows = $parties->map(function (MoneyParty $party) use (&$assets, &$liabilities, $movementNet, $fundingByParty): array {
@@ -132,6 +139,7 @@ class FinancialStatusService
             } else {
                 $liabilities += abs($balance);
             }
+
             return ['party' => $party, 'balance' => $balance];
         });
 
@@ -145,23 +153,29 @@ class FinancialStatusService
 
     private function invoiceTotal(string $type, ?string $from, ?string $to): float
     {
-        return (float) $this->dateRange(Invoice::query()->where('type', $type), 'created_at', $from, $to)->sum('total');
+        return (float) $this->dateRange(Invoice::query()->active()->where('type', $type), 'created_at', $from, $to)->sum('total');
     }
 
     private function invoicePaid(string $type, ?string $from, ?string $to): float
     {
-        return (float) $this->dateRange(Invoice::query()->where('type', $type), 'created_at', $from, $to)->sum('amount_paid');
+        return (float) $this->dateRange(Invoice::query()->active()->where('type', $type), 'created_at', $from, $to)->sum('amount_paid');
     }
 
-    private function salesCost(?string $from, ?string $to): float
+    private function salesCost(?string $from, ?string $to): array
     {
-        return (float) $this->dateRange(
+        $query = $this->dateRange(
             InvoiceLine::query()->join('invoices', 'invoices.id', '=', 'invoice_lines.invoice_id')
-                ->where('invoices.type', Invoice::TYPE_SALE),
+                ->where('invoices.type', Invoice::TYPE_SALE)
+                ->where('invoices.status', Invoice::STATUS_ACTIVE),
             'invoices.created_at',
             $from,
             $to,
-        )->selectRaw('COALESCE(SUM(invoice_lines.quantity * COALESCE(invoice_lines.purchase_price, 0)), 0) as total')->value('total');
+        );
+
+        return [
+            'total' => (float) (clone $query)->selectRaw('COALESCE(SUM(invoice_lines.quantity * invoice_lines.purchase_price), 0) as total')->value('total'),
+            'unknown_count' => (int) (clone $query)->whereNull('invoice_lines.purchase_price')->count('invoice_lines.id'),
+        ];
     }
 
     /**
@@ -172,24 +186,28 @@ class FinancialStatusService
     private function crossPeriodReturns(?string $from, ?string $to): array
     {
         if (! $from) {
-            return ['total' => 0.0, 'cost' => 0.0];
+            return ['total' => 0.0, 'cost' => 0.0, 'unknown_count' => 0];
         }
 
         $query = Invoice::query()->where('invoices.type', Invoice::TYPE_RETURN)
+            ->where('invoices.status', Invoice::STATUS_ACTIVE)
             ->join('invoices as originals', 'originals.id', '=', 'invoices.original_invoice_id')
+            ->where('originals.status', Invoice::STATUS_ACTIVE)
             ->whereDate('originals.created_at', '<', $from);
         $this->dateRange($query, 'invoices.created_at', $from, $to);
 
         $total = (float) (clone $query)->sum('invoices.total');
-        $cost = (float) InvoiceLine::query()->join('invoices as returns', 'returns.id', '=', 'invoice_lines.invoice_id')
+        $costQuery = InvoiceLine::query()->join('invoices as returns', 'returns.id', '=', 'invoice_lines.invoice_id')
             ->join('invoices as originals', 'originals.id', '=', 'returns.original_invoice_id')
             ->where('returns.type', Invoice::TYPE_RETURN)
+            ->where('returns.status', Invoice::STATUS_ACTIVE)
+            ->where('originals.status', Invoice::STATUS_ACTIVE)
             ->whereDate('originals.created_at', '<', $from)
-            ->tap(fn (Builder $builder) => $this->dateRange($builder, 'returns.created_at', $from, $to))
-            ->selectRaw('COALESCE(SUM(invoice_lines.quantity * COALESCE(invoice_lines.purchase_price, 0)), 0) as total')
-            ->value('total');
+            ->tap(fn (Builder $builder) => $this->dateRange($builder, 'returns.created_at', $from, $to));
+        $cost = (float) (clone $costQuery)->selectRaw('COALESCE(SUM(invoice_lines.quantity * invoice_lines.purchase_price), 0) as total')->value('total');
+        $unknownCount = (int) (clone $costQuery)->whereNull('invoice_lines.purchase_price')->count('invoice_lines.id');
 
-        return ['total' => round($total, 2), 'cost' => round($cost, 2)];
+        return ['total' => round($total, 2), 'cost' => round($cost, 2), 'unknown_count' => $unknownCount];
     }
 
     private function sumExpenses(?string $from, ?string $to): float
@@ -202,13 +220,16 @@ class FinancialStatusService
         $query = LedgerSettlement::query()->join('partners', 'partners.id', '=', 'ledger_settlements.partner_id')
             ->where('partners.type', $partnerType)
             ->where('ledger_settlements.type', $type);
+
         return (float) $this->dateRange($query, 'ledger_settlements.settlement_date', $from, $to)->sum('ledger_settlements.amount');
     }
 
     private function fundedPurchases(?string $from, ?string $to): float
     {
         $query = PurchaseFundingSource::query()->join('invoices', 'invoices.id', '=', 'purchase_funding_sources.invoice_id')
-            ->where('invoices.type', Invoice::TYPE_PURCHASE);
+            ->where('invoices.type', Invoice::TYPE_PURCHASE)
+            ->where('invoices.status', Invoice::STATUS_ACTIVE);
+
         return (float) $this->dateRange($query, 'invoices.created_at', $from, $to)->sum('purchase_funding_sources.amount_base_currency');
     }
 
@@ -216,7 +237,7 @@ class FinancialStatusService
     private function anonymousReturnRefunds(?string $from, ?string $to): float
     {
         return (float) $this->dateRange(
-            Invoice::query()->where('type', Invoice::TYPE_RETURN)->whereNull('partner_id'),
+            Invoice::query()->active()->where('type', Invoice::TYPE_RETURN)->whereNull('partner_id'),
             'created_at',
             $from,
             $to,
