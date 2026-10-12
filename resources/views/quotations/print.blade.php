@@ -70,7 +70,7 @@
             <div class="quotation-table-wrap">
                 <table class="quotation-lines">
                     <thead><tr><th class="line-number">#</th><th>المنتج</th><th class="line-quantity">الكمية</th><th class="line-money">السعر</th><th class="line-money">الإجمالي</th></tr></thead>
-                    <tbody>@foreach($quotation->lines as $line)<tr><td class="line-number">{{ $loop->iteration }}</td><td class="line-product">{{ $line->product_name }}</td><td class="line-quantity">{{ number_format((float) $line->quantity, 2) }}</td><td class="line-money">{{ number_format((float) $line->unit_price, 2) }}</td><td class="line-money line-total">{{ number_format((float) $line->line_total, 2) }}</td></tr>@endforeach</tbody>
+                    <tbody>@foreach($quotation->lines as $line)<tr><td class="line-number">{{ $loop->iteration }}</td><td class="line-product">{{ $line->product_name }}</td><td class="line-quantity">{{ \App\Support\Decimal::displayQuantity($line->quantity) }}</td><td class="line-money">{{ number_format((float) $line->unit_price, 2) }}</td><td class="line-money line-total">{{ number_format((float) $line->line_total, 2) }}</td></tr>@endforeach</tbody>
                 </table>
             </div>
         </section>

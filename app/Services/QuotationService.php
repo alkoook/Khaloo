@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\Product;
 use App\Models\Quotation;
+use App\Support\Decimal as D;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -40,9 +41,9 @@ class QuotationService
                 $quotation->lines()->create([
                     'product_id' => $product?->id,
                     'product_name' => $product?->name ?: $line['product_name'],
-                    'quantity' => (int) $line['quantity'],
-                    'unit_price' => (float) $line['unit_price'],
-                    'line_total' => round((int) $line['quantity'] * (float) $line['unit_price'], 2),
+                    'quantity' => D::quantity($line['quantity']),
+                    'unit_price' => D::scale($line['unit_price']),
+                    'line_total' => D::mul($line['quantity'], $line['unit_price']),
                 ]);
             }
 
@@ -50,7 +51,7 @@ class QuotationService
         });
     }
 
-    public function convertToSale(Quotation $quotation, float $amountPaid): Invoice
+    public function convertToSale(Quotation $quotation, mixed $amountPaid): Invoice
     {
         $invoice = DB::transaction(function () use ($quotation, $amountPaid): Invoice {
             $locked = Quotation::query()->with('lines')->lockForUpdate()->findOrFail($quotation->id);
@@ -60,10 +61,10 @@ class QuotationService
             if (! in_array($locked->status, ['accepted', 'sent', 'draft'], true)) {
                 throw ValidationException::withMessages(['convert' => 'لا يمكن تحويل هذا العرض في وضعه الحالي.']);
             }
-            if ($amountPaid < 0 || $amountPaid > (float) $locked->total) {
+            if (D::cmp($amountPaid, 0) < 0 || D::cmp($amountPaid, $locked->total) > 0) {
                 throw ValidationException::withMessages(['amountPaid' => 'المبلغ المدفوع غير صالح.']);
             }
-            if (! $locked->partner_id && $amountPaid < (float) $locked->total) {
+            if (! $locked->partner_id && D::cmp($amountPaid, $locked->total) < 0) {
                 throw ValidationException::withMessages(['partner_id' => 'يجب اختيار عميل عند وجود مبلغ متبقٍ.']);
             }
 
@@ -71,7 +72,7 @@ class QuotationService
                 ->lockForUpdate()->get()->keyBy('id');
             foreach ($locked->lines as $line) {
                 $product = $products->get($line->product_id);
-                if (! $product || $product->quantity < $line->quantity) {
+                if (! $product || D::cmp($product->quantity, $line->quantity) < 0) {
                     throw ValidationException::withMessages(['stock' => "المخزون غير كافٍ للمنتج {$line->product_name}."]);
                 }
                 if ($product->purchase_price === null) {
@@ -92,7 +93,7 @@ class QuotationService
             ]);
             foreach ($pricing['lines'] as $line) {
                 $product = $products->get($line['product_id']);
-                $product->decrement('quantity', $line['quantity']);
+                $product->update(['quantity' => D::sub($product->quantity, $line['quantity'], 3)]);
                 InvoiceLine::query()->create([
                     'invoice_id' => $invoice->id, 'product_id' => $product->id,
                     'product_name' => $line['product_name'], 'quantity' => $line['quantity'],

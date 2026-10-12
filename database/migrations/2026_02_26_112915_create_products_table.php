@@ -22,7 +22,7 @@ return new class extends Migration
             $table->decimal('total_purchase_amount', 14, 2)->nullable();
             $table->decimal('paid_purchase_amount', 14, 2)->nullable();
             $table->decimal('sale_price', 14, 2)->nullable();
-            $table->unsignedInteger('quantity')->default(0);
+            $table->decimal('quantity', 14, 3)->default(0);
             $table->unsignedInteger('alert_stock_at')->default(5);
             $table->string('country_origin')->nullable();
             $table->string('image')->nullable();

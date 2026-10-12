@@ -28,7 +28,7 @@
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label for="quantity" class="block text-sm font-medium mb-1">الكمية</label>
-                <div class="invoice-hint">{{ number_format((int)$product->quantity) }} — يتغير فقط عبر الفواتير والمرتجعات.</div>
+                <div class="invoice-hint">{{ \App\Support\Decimal::displayQuantity($product->quantity) }} — يتغير فقط عبر الفواتير والمرتجعات.</div>
             </div>
             <div>
                 <label for="alert_stock_at" class="block text-sm font-medium mb-1">حد تنبيه هذا المنتج</label>

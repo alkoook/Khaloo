@@ -26,7 +26,7 @@ class Edit extends Component
 
     public ?string $sale_price = null;
 
-    public int $quantity = 0;
+    public string $quantity = '0.000';
 
     public int $alert_stock_at = 5;
 

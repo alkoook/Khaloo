@@ -70,6 +70,7 @@ Route::middleware(['auth', EnsureWeeklyBackupReminder::class])->group(function (
 
     Route::get('/invoices/{invoice}/edit', App\Livewire\Invoices\Edit::class)->name('invoices.edit');
     Route::get('/invoices/{invoice}/receipt', [InvoiceController::class, 'receipt'])->name('invoices.receipt');
+    Route::post('/invoices/{invoice}/receipt/cut', [InvoiceController::class, 'cutReceipt'])->name('invoices.receipt.cut');
 
     Route::get('/ledger', App\Livewire\Ledger\Index::class)->name('ledger.index');
     Route::get('/financial-status', FinancialStatus::class)->name('financial-status.index');

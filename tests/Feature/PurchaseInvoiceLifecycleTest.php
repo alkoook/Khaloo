@@ -63,7 +63,7 @@ test('purchase edit and cancellation preserve stock supplier balance and reports
     app(InvoiceService::class)->updateInvoice($invoice, [[
         'product_id' => $product->id, 'quantity' => 3, 'unit_price' => 5, 'sale_price' => 10,
     ]], 0);
-    expect($product->fresh()->quantity)->toBe(11)
+    expect($product->fresh()->quantity)->toBe('11.000')
         ->and((float) $invoice->fresh()->total)->toBe(15.0);
 
     $this->actingAs($user)->post(route('invoices.purchases.cancel', $invoice), [
@@ -75,13 +75,13 @@ test('purchase edit and cancellation preserve stock supplier balance and reports
     expect($invoice->isCancelled())->toBeTrue()
         ->and($invoice->cancelled_at)->not->toBeNull()
         ->and($invoice->cancelled_by)->toBe($user->id)
-        ->and($product->fresh()->quantity)->toBe(8)
-        ->and(app(FinancialService::class)->payable($balance))->toBe(0.0)
-        ->and(app(ReportService::class)->preview('purchases', [])['total'])->toBe(0.0);
+        ->and($product->fresh()->quantity)->toBe('8.000')
+        ->and(app(FinancialService::class)->payable($balance))->toBe('0.00')
+        ->and(app(ReportService::class)->preview('purchases', [])['total'])->toBe('0.00');
 
     expect(fn () => app(InvoiceCancellationService::class)->cancel($invoice->fresh(), $user->id, 'محاولة إلغاء مكررة'))
         ->toThrow(ValidationException::class);
-    expect($product->fresh()->quantity)->toBe(8);
+    expect($product->fresh()->quantity)->toBe('8.000');
     $this->actingAs($user)->get(route('invoices.edit', $invoice))->assertStatus(409)->assertSee('لا يمكن تعديل فاتورة ملغاة');
 });
 
@@ -104,7 +104,7 @@ test('later or consumed purchase stock keeps actions visible but safely disabled
     $this->actingAs($user)->get(route('invoices.edit', $invoice))->assertStatus(409)->assertSee('حركات مخزون لاحقة');
     expect(fn () => app(InvoiceCancellationService::class)->cancel($invoice, $user->id, 'محاولة غير آمنة'))
         ->toThrow(ValidationException::class);
-    expect($product->fresh()->quantity)->toBe(9);
+    expect($product->fresh()->quantity)->toBe('9.000');
 });
 
 test('consumed purchase quantity blocks edit and cancellation without changing stock', function () {
@@ -117,5 +117,5 @@ test('consumed purchase quantity blocks edit and cancellation without changing s
         ->assertSee('تعديل')->assertSee('إلغاء الفاتورة')->assertSee('تم بيعه أو استهلاكه');
     expect(fn () => app(InvoiceCancellationService::class)->cancel($invoice, $user->id, 'إلغاء كمية مستهلكة'))
         ->toThrow(ValidationException::class);
-    expect($product->fresh()->quantity)->toBe(1);
+    expect($product->fresh()->quantity)->toBe('1.000');
 });

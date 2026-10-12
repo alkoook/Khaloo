@@ -24,7 +24,7 @@ function v3Product(int $quantity=10): Product
 test('fully paid sale may be anonymous while debt requires a customer', function () {
     $user=User::factory()->create();$product=v3Product();
     Livewire::actingAs($user)->test(CreateSale::class)->call('selectProduct',$product->id)->set('amount_paid','10')->call('save');
-    expect(Invoice::query()->whereNull('partner_id')->where('type','sale')->count())->toBe(1)->and($product->fresh()->quantity)->toBe(9);
+    expect(Invoice::query()->whereNull('partner_id')->where('type','sale')->count())->toBe(1)->and($product->fresh()->quantity)->toBe('9.000');
 
     $second=v3Product();
     Livewire::actingAs($user)->test(CreateSale::class)->call('selectProduct',$second->id)->set('amount_paid','0')->call('save')->assertHasErrors(['partner_id']);
@@ -33,11 +33,11 @@ test('fully paid sale may be anonymous while debt requires a customer', function
 test('quotation lifecycle does not touch stock until explicit conversion', function () {
     $product=v3Product(7);$customer=Partner::query()->create(['name'=>'عميل عرض','type'=>Partner::TYPE_CUSTOMER]);$service=app(QuotationService::class);
     $quotation=$service->save(['partner_id'=>$customer->id,'quotation_date'=>now()->toDateString(),'expires_at'=>now()->addWeek()->toDateString(),'status'=>'accepted','discount'=>0], [['product_id'=>$product->id,'product_name'=>$product->name,'quantity'=>2,'unit_price'=>10]]);
-    expect($product->fresh()->quantity)->toBe(7);
+    expect($product->fresh()->quantity)->toBe('7.000');
     $invoice=$service->convertToSale($quotation,20);
-    expect($product->fresh()->quantity)->toBe(5)->and($invoice->type)->toBe(Invoice::TYPE_SALE)->and($quotation->fresh()->status)->toBe('converted');
+    expect($product->fresh()->quantity)->toBe('5.000')->and($invoice->type)->toBe(Invoice::TYPE_SALE)->and($quotation->fresh()->status)->toBe('converted');
     $same=$service->convertToSale($quotation->fresh(),20);
-    expect($same->id)->toBe($invoice->id)->and($product->fresh()->quantity)->toBe(5);
+    expect($same->id)->toBe($invoice->id)->and($product->fresh()->quantity)->toBe('5.000');
 });
 
 test('stock alerts deduplicate reset and trigger again after recrossing threshold', function () {
@@ -63,7 +63,7 @@ test('arabic statement message and detailed invoice workbook contain no exposed 
     $reports=app(ReportService::class); $message=$reports->statementMessage($partner); $filters=['partner_id'=>$partner->id,'from'=>now()->subDay()->toDateString(),'to'=>now()->toDateString()]; $path=$reports->export('sales',$filters);
     $book=\PhpOffice\PhpSpreadsheet\IOFactory::load($path); $titles=$book->getSheetNames();
     expect($message)->toContain('كشف حساب')->toContain('الرصيد النهائي')->not->toContain('incoming')->not->toContain('outgoing')
-        ->and($reports->reportTitle('sales',$filters))->toContain('الطرف: عميل عربي')->toContain('من ')
+        ->and($reports->reportTitle('sales',$filters))->toContain('العميل عميل عربي')->toContain('من ')
         ->and($titles)->toContain('المبيعات')->toContain('تفاصيل المبيعات')->toContain('حركات أطراف المبيعات');
     $book->disconnectWorksheets(); @unlink($path);
 });
@@ -97,7 +97,7 @@ test('quotation expiry is nullable on create and may be cleared on update', func
 
     Livewire::actingAs($user)->test(QuotationsIndex::class)->set('partner_id',$customer->id)->set('lines',$line)->set('expires_at','')->call('save')->assertHasNoErrors();
     $withoutExpiry=\App\Models\Quotation::query()->latest('id')->first();
-    expect($withoutExpiry->expires_at)->toBeNull()->and($product->fresh()->quantity)->toBe(9);
+    expect($withoutExpiry->expires_at)->toBeNull()->and($product->fresh()->quantity)->toBe('9.000');
 
     $expiry=now()->addDays(10)->toDateString();
     Livewire::actingAs($user)->test(QuotationsIndex::class)->set('partner_id',$customer->id)->set('lines',$line)->set('expires_at',$expiry)->call('save')->assertHasNoErrors();
@@ -105,7 +105,7 @@ test('quotation expiry is nullable on create and may be cleared on update', func
     expect($withExpiry->expires_at?->toDateString())->toBe($expiry);
 
     Livewire::actingAs($user)->test(QuotationsIndex::class)->call('edit',$withExpiry->id)->set('expires_at','')->call('save')->assertHasNoErrors();
-    expect($withExpiry->fresh()->expires_at)->toBeNull()->and($product->fresh()->quantity)->toBe(9);
+    expect($withExpiry->fresh()->expires_at)->toBeNull()->and($product->fresh()->quantity)->toBe('9.000');
 });
 
 test('quotation workspace lists quotations and never substitutes sales invoices', function () {
@@ -141,7 +141,7 @@ test('sales reports apply partner and category to data title summary and detail 
     $path=$reports->export('sales',$filters); $book=\PhpOffice\PhpSpreadsheet\IOFactory::load($path);
     $summary=collect($book->getSheet(0)->toArray())->flatten()->filter()->implode(' | ');
     $details=collect($book->getSheet(1)->toArray())->flatten()->filter()->implode(' | ');
-    expect($summary)->toContain('التصنيف: الأدوات الصحية')->toContain('الطرف: أحمد الحسن')->not->toContain('طرف مستبعد')
+    expect($summary)->toContain('التصنيف: الأدوات الصحية')->toContain('العميل: أحمد الحسن')->not->toContain('طرف مستبعد')
         ->and($details)->toContain('خلاط مختبر')->not->toContain('منتج مستبعد');
     $book->disconnectWorksheets(); @unlink($path);
 });

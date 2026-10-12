@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Invoice;
 use App\Models\LedgerSettlement;
 use App\Models\Partner;
+use App\Support\Decimal as D;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -12,9 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class FinancialService
 {
-    public function recordSettlement(int $partnerId, string $side, float $amount, string $date, ?string $notes = null): LedgerSettlement
+    public function recordSettlement(int $partnerId, string $side, mixed $amount, string $date, ?string $notes = null): LedgerSettlement
     {
-        if (! in_array($side, ['receivable', 'payable'], true) || ! is_finite($amount) || $amount <= 0) {
+        $amount = D::scale($amount);
+        if (! in_array($side, ['receivable', 'payable'], true) || D::cmp($amount, 0) <= 0) {
             throw ValidationException::withMessages(['amount' => 'قيمة الدفعة غير صالحة.']);
         }
 
@@ -22,8 +24,8 @@ class FinancialService
             Partner::query()->lockForUpdate()->findOrFail($partnerId);
             $partner = $this->partnerBalancesQuery()->findOrFail($partnerId);
             $available = $this->balanceFor($partner, $side);
-            $amount = round($amount, 2);
-            if ($amount > $available) {
+            $amount = D::scale($amount);
+            if (D::cmp($amount, $available) > 0) {
                 throw ValidationException::withMessages(['amount' => 'المبلغ يتجاوز الرصيد المستحق. لا يدعم النظام دفعة زائدة غير مصنفة.']);
             }
 
@@ -42,9 +44,9 @@ class FinancialService
         $row = $this->partnerBalancesQuery()->findOrFail($partner->id);
 
         return [
-            'invoiced' => $partner->isCustomer() ? (float) $row->sales_due : (float) $row->purchases_due,
-            'paid' => $partner->isCustomer() ? (float) $row->incoming_total : (float) $row->outgoing_total,
-            'credits' => $partner->isCustomer() ? (float) $row->outgoing_total : (float) $row->incoming_total,
+            'invoiced' => $partner->isCustomer() ? D::scale($row->sales_due) : D::scale($row->purchases_due),
+            'paid' => $partner->isCustomer() ? D::scale($row->incoming_total) : D::scale($row->outgoing_total),
+            'credits' => $partner->isCustomer() ? D::scale($row->outgoing_total) : D::scale($row->incoming_total),
             'receivable' => $this->receivable($row),
             'payable' => $this->payable($row),
             'signed' => $this->signedBalance($row),
@@ -54,19 +56,18 @@ class FinancialService
     public function statementRows(Partner $partner, ?string $from = null, ?string $to = null): Collection
     {
         $rows = collect();
-        Invoice::query()->active()->with('returns')->where('partner_id', $partner->id)
+        Invoice::query()->active()->with(['returns' => fn ($q) => $q->active()])->where('partner_id', $partner->id)
             ->where($partner->isCustomer() ? 'type' : 'type', $partner->isCustomer() ? Invoice::TYPE_SALE : Invoice::TYPE_PURCHASE)
-            ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
-            ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))->get()
+            ->get()
             ->each(function (Invoice $invoice) use ($rows, $partner): void {
-                $returns = $partner->isCustomer() ? (float) $invoice->returns->sum('total') : 0.0;
-                $gross = round(($partner->isCustomer() ? $invoice->collectibleTotal() : (float) $invoice->total) + $returns, 2);
-                $rows->push(['date' => $invoice->created_at, 'sort' => 10, 'type' => $partner->isCustomer() ? 'فاتورة بيع' : 'فاتورة شراء', 'reference' => '#'.$invoice->id, 'description' => 'إجمالي الفاتورة النهائي', 'charge' => $gross, 'payment' => 0.0]);
-                if ((float) $invoice->initial_paid > 0) {
-                    $rows->push(['date' => $invoice->created_at, 'sort' => 20, 'type' => $partner->isCustomer() ? 'دفعة من العميل' : 'دفعة للمورد', 'reference' => '#'.$invoice->id, 'description' => 'مدفوع عند إنشاء الفاتورة', 'charge' => 0.0, 'payment' => (float) $invoice->initial_paid]);
+                $returns = $partner->isCustomer() ? D::sum($invoice->returns->pluck('total')) : '0.00';
+                $gross = D::add($partner->isCustomer() ? $invoice->collectibleTotal() : $invoice->total, $returns);
+                $rows->push(['date' => $invoice->created_at, 'sort' => 10, 'type' => $partner->isCustomer() ? 'فاتورة بيع' : 'فاتورة شراء', 'reference' => '#'.$invoice->id, 'description' => 'إجمالي الفاتورة النهائي', 'charge' => $gross, 'payment' => '0.00']);
+                if ($invoice->initial_paid > 0) {
+                    $rows->push(['date' => $invoice->created_at, 'sort' => 20, 'type' => $partner->isCustomer() ? 'دفعة من العميل' : 'دفعة للمورد', 'reference' => '#'.$invoice->id, 'description' => 'مدفوع عند إنشاء الفاتورة', 'charge' => '0.00', 'payment' => $invoice->initial_paid]);
                 }
                 foreach ($invoice->returns as $return) {
-                    $rows->push(['date' => $return->created_at, 'sort' => 30, 'type' => 'مرتجع مبيعات', 'reference' => '#'.$return->id, 'description' => 'مرتجع من الفاتورة #'.$invoice->id, 'charge' => 0.0, 'payment' => (float) $return->total]);
+                    $rows->push(['date' => $return->created_at, 'sort' => 30, 'type' => 'مرتجع مبيعات', 'reference' => '#'.$return->id, 'description' => 'مرتجع من الفاتورة #'.$invoice->id, 'charge' => '0.00', 'payment' => $return->total]);
                 }
             });
         LedgerSettlement::query()->where('partner_id', $partner->id)
@@ -75,19 +76,19 @@ class FinancialService
             ->each(function (LedgerSettlement $settlement) use ($rows, $partner): void {
                 $reduces = ($partner->isCustomer() && $settlement->type === LedgerSettlement::TYPE_INCOMING)
                     || $partner->isSupplier();
-                $rows->push(['date' => $settlement->settlement_date, 'sort' => 40, 'type' => $settlement->type === LedgerSettlement::TYPE_INCOMING ? 'مبلغ مستلم' : 'مبلغ مدفوع', 'reference' => 'P-'.$settlement->id, 'description' => $settlement->notes ?: 'تسوية لاحقة', 'charge' => $reduces ? 0.0 : (float) $settlement->amount, 'payment' => $reduces ? (float) $settlement->amount : 0.0]);
+                $rows->push(['date' => $settlement->settlement_date, 'sort' => 40, 'type' => $settlement->type === LedgerSettlement::TYPE_INCOMING ? 'مبلغ مستلم' : 'مبلغ مدفوع', 'reference' => 'دفعة-'.$settlement->id, 'description' => $settlement->notes ?: 'تسوية لاحقة', 'charge' => $reduces ? '0.00' : $settlement->amount, 'payment' => $reduces ? $settlement->amount : '0.00']);
             });
 
-        $balance = 0.0;
+        $balance = '0.00';
         if ($from) {
             $before = now()->parse($from)->subDay()->toDateString();
             $opening = $this->partnerBalancesQuery(null, null, $before)->find($partner->id);
-            $balance = $opening ? $this->signedBalance($opening) : 0.0;
+            $balance = $opening ? $this->signedBalance($opening) : '0.00';
         }
 
-        return $rows->sortBy(fn ($row) => $row['date']->format('Y-m-d H:i:s').'|'.str_pad((string) $row['sort'], 2, '0', STR_PAD_LEFT))->values()
+        return $rows->filter(fn ($row) => (! $from || $row['date']->toDateString() >= $from) && (! $to || $row['date']->toDateString() <= $to))->sortBy(fn ($row) => $row['date']->format('Y-m-d H:i:s').'|'.str_pad((string) $row['sort'], 2, '0', STR_PAD_LEFT))->values()
             ->map(function (array $row) use (&$balance): array {
-                $balance = round($balance + $row['charge'] - $row['payment'], 2);
+                $balance = D::sub(D::add($balance, $row['charge']), $row['payment']);
 
                 return $row + ['balance' => $balance];
             });
@@ -103,10 +104,22 @@ class FinancialService
         $invoiceSum = function (string $type) use ($from, $to) {
             $totalColumn = $type === Invoice::TYPE_SALE ? 'COALESCE(payable_total, total)' : 'total';
 
-            return Invoice::query()->active()->selectRaw("COALESCE(SUM({$totalColumn} - amount_paid), 0)")
+            $sum = Invoice::query()->active()->selectRaw("COALESCE(SUM({$totalColumn} - amount_paid".($type === Invoice::TYPE_SALE
+                ? " + (SELECT COALESCE(SUM(r.total), 0) FROM invoices r WHERE r.original_invoice_id = invoices.id AND r.status = 'active' AND r.type = 'return')" : '').'), 0)')
                 ->whereColumn('partner_id', 'partners.id')->where('type', $type)
                 ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
+            if ($type !== Invoice::TYPE_SALE) {
+                return $sum;
+            }
+            $returns = Invoice::query()->active()->where('type', Invoice::TYPE_RETURN)
+                ->whereColumn('partner_id', 'partners.id')
+                ->whereHas('originalInvoice', fn ($q) => $q->active())
+                ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
+                ->selectRaw('COALESCE(SUM(total), 0)');
+
+            return DB::query()->selectRaw('('.$sum->toSql().') - ('.$returns->toSql().')', [...$sum->getBindings(), ...$returns->getBindings()]);
         };
         $settlementSum = function (string $type) use ($from, $to) {
             return LedgerSettlement::query()->selectRaw('COALESCE(SUM(amount), 0)')
@@ -133,28 +146,28 @@ class FinancialService
             });
     }
 
-    public function receivable(Partner $partner): float
+    public function receivable(Partner $partner): string
     {
         if (! $partner->isCustomer()) {
-            return 0.0;
+            return '0.00';
         }
 
-        return max(0, round((float) $partner->sales_due - (float) $partner->incoming_total + (float) $partner->outgoing_total, 2));
+        return D::scale(D::max(0, $this->signedBalance($partner)));
     }
 
-    public function payable(Partner $partner): float
+    public function payable(Partner $partner): string
     {
         if ($partner->isCustomer()) {
-            return max(0, round((float) $partner->incoming_total - (float) $partner->sales_due - (float) $partner->outgoing_total, 2));
+            return D::scale(D::max(0, D::sub(0, $this->signedBalance($partner))));
         }
         if (! $partner->isSupplier()) {
-            return 0.0;
+            return '0.00';
         }
 
-        return max(0, round((float) $partner->purchases_due - (float) $partner->outgoing_total - (float) $partner->incoming_total, 2));
+        return D::scale(D::max(0, $this->signedBalance($partner)));
     }
 
-    public function balanceFor(Partner $partner, string $side): float
+    public function balanceFor(Partner $partner, string $side): string
     {
         return $side === 'payable' ? $this->payable($partner) : $this->receivable($partner);
     }
@@ -163,16 +176,16 @@ class FinancialService
      * Positive means an amount remains due from the counterparty's normal
      * invoice flow; negative means the counterparty has a credit balance.
      */
-    public function signedBalance(Partner $partner): float
+    public function signedBalance(Partner $partner): string
     {
         if ($partner->isCustomer()) {
-            return round((float) $partner->sales_due - (float) $partner->incoming_total + (float) $partner->outgoing_total, 2);
+            return D::add(D::sub($partner->sales_due, $partner->incoming_total), $partner->outgoing_total);
         }
 
         if ($partner->isSupplier()) {
-            return round((float) $partner->purchases_due - (float) $partner->outgoing_total - (float) $partner->incoming_total, 2);
+            return D::sub(D::sub($partner->purchases_due, $partner->outgoing_total), $partner->incoming_total);
         }
 
-        return 0.0;
+        return '0.00';
     }
 }

@@ -33,7 +33,7 @@ test('purchase invoice modal creates only a product master and selects it', func
     $product = Product::query()->where('name', 'منتج من الفاتورة')->sole();
     expect($product->category_id)->toBe($category->id)
         ->and($product->partner_id)->toBe($supplier->id)
-        ->and($product->quantity)->toBe(0)
+        ->and($product->quantity)->toBe('0.000')
         ->and($product->purchase_price)->toBeNull()
         ->and(Invoice::query()->count())->toBe(0)
         ->and(InvoiceLine::query()->count())->toBe(0)
@@ -55,13 +55,13 @@ test('quotation fixed and percentage discounts have no financial effect and conv
     expect((float) $fixed->subtotal)->toBe(50.0)->and((float) $fixed->discount_amount)->toBe(10.0)->and((float) $fixed->total)->toBe(40.0)
         ->and((float) $percentage->discount_amount)->toBe(5.0)->and((float) $percentage->total)->toBe(45.0)
         ->and(Invoice::query()->count())->toBe(0)->and(LedgerSettlement::query()->count())->toBe(0)
-        ->and($product->fresh()->quantity)->toBe(10);
+        ->and($product->fresh()->quantity)->toBe('10.000');
 
     $this->actingAs($user)->get(route('quotations.print', $percentage))->assertOk()->assertSee('الحسم (10.00%)')->assertSee('45.00');
     $invoice = $service->convertToSale($percentage, 20);
     expect($invoice->discount_type)->toBe('percentage')->and((float) $invoice->discount_value)->toBe(10.0)
         ->and((float) $invoice->discount_amount)->toBe(5.0)->and((float) $invoice->total)->toBe(45.0)
-        ->and((float) $invoice->amount_paid)->toBe(20.0)->and($product->fresh()->quantity)->toBe(9);
+        ->and((float) $invoice->amount_paid)->toBe(20.0)->and($product->fresh()->quantity)->toBe('9.000');
 });
 
 test('customer and supplier settlements reconcile through one service and reject overpayment', function () {
@@ -79,10 +79,10 @@ test('customer and supplier settlements reconcile through one service and reject
 
     $customerRow = $financials->partnerBalancesQuery()->findOrFail($customer->id);
     $supplierRow = $financials->partnerBalancesQuery()->findOrFail($supplier->id);
-    expect($financials->receivable($customerRow))->toBe(50.0)
-        ->and($financials->payable($supplierRow))->toBe(0.0)
-        ->and($financials->statementRows($customer)->last()['balance'])->toBe(50.0)
-        ->and($financials->statementRows($supplier)->last()['balance'])->toBe(0.0);
+    expect($financials->receivable($customerRow))->toBe('50.00')
+        ->and($financials->payable($supplierRow))->toBe('0.00')
+        ->and($financials->statementRows($customer)->last()['balance'])->toBe('50.00')
+        ->and($financials->statementRows($supplier)->last()['balance'])->toBe('0.00');
 
     expect(fn () => $financials->recordSettlement($customer->id, 'receivable', 51, now()->toDateString()))
         ->toThrow(ValidationException::class);

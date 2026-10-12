@@ -50,7 +50,7 @@
 
         <section class="invoice-items">
             <table><thead><tr><th class="seq">#</th><th>المادة</th><th class="num">الكمية</th><th class="num">السعر</th><th class="num">الخصم</th><th class="num">الإجمالي</th></tr></thead>
-            <tbody>@foreach($invoice->lines as $line)<tr><td class="seq">{{ $loop->iteration }}</td><td><strong>{{ $line->product_name }}</strong></td><td class="num">{{ number_format((float)$line->quantity) }}</td><td class="num">{{ number_format((float)$line->unit_price,2) }}</td><td class="num">{{ (float)$line->discount_amount > 0 ? number_format((float)$line->discount_amount,2) : '—' }}</td><td class="num total">{{ number_format((float)($line->net_line_total ?? $line->line_total),2) }}</td></tr>@endforeach</tbody></table>
+            <tbody>@foreach($invoice->lines as $line)<tr><td class="seq">{{ $loop->iteration }}</td><td><strong>{{ $line->product_name }}</strong></td><td class="num">{{ \App\Support\Decimal::displayQuantity($line->quantity) }}</td><td class="num">{{ number_format((float)$line->unit_price,2) }}</td><td class="num">{{ (float)$line->discount_amount > 0 ? number_format((float)$line->discount_amount,2) : '—' }}</td><td class="num total">{{ number_format((float)($line->net_line_total ?? $line->line_total),2) }}</td></tr>@endforeach</tbody></table>
         </section>
 
         @if($invoice->isSale() && $invoice->additionalLines->isNotEmpty())
@@ -58,7 +58,7 @@
         @endif
 
         <footer class="invoice-sheet__footer">
-            <div class="invoice-note"><strong>{{ $invoice->lines->count() }} صنف</strong><span>{{ number_format((float)$invoice->lines->sum('quantity')) }} وحدة</span>@if($invoice->isSale() && $invoice->returns->isNotEmpty())<span>{{ $invoice->returns->count() }} مرتجع مرتبط</span>@endif</div>
+            <div class="invoice-note"><strong>{{ $invoice->lines->count() }} صنف</strong><span>{{ \App\Support\Decimal::displayQuantity(\App\Support\Decimal::sum($invoice->lines->pluck('quantity'), 3)) }} وحدة</span>@if($invoice->isSale() && $invoice->returns->isNotEmpty())<span>{{ $invoice->returns->count() }} مرتجع مرتبط</span>@endif</div>
             <dl class="invoice-totals">
                 <div><dt>المجموع قبل الخصم</dt><dd>{{ number_format((float)($invoice->subtotal ?: $invoice->lines->sum('line_total')),2) }} {{ $currency }}</dd></div>
                 @if((float)$invoice->discount_amount > 0)<div><dt>الخصم</dt><dd>- {{ number_format((float)$invoice->discount_amount,2) }} {{ $currency }}</dd></div>@endif
@@ -71,5 +71,19 @@
             </dl>
         </footer>
     </article>
+    @if($profitability !== null)
+        <section class="workspace-card financial-card invoice-profitability print:hidden" aria-label="ربحية الفاتورة">
+            <h2>ربحية الفاتورة</h2>
+            @if(!$profitability['active'])<p>الفاتورة ملغاة؛ لا تدخل في الربحية.</p>@endif
+            <dl>
+                <div><dt>صافي مبيعات البضاعة</dt><dd>{{ \App\Support\Decimal::format($profitability['net_merchandise']) }} {{ $currency }}</dd></div>
+                @if($profitability['delivery'] > 0)<div><dt>إيراد التوصيل</dt><dd>{{ \App\Support\Decimal::format($profitability['delivery']) }} {{ $currency }}</dd></div>@endif
+                <div><dt>تكلفة البضاعة المباعة</dt><dd>{{ $profitability['cogs'] === null ? 'غير موثوقة' : \App\Support\Decimal::format($profitability['cogs']) }}</dd></div>
+                <div class="emphasis"><dt>مجمل ربح الفاتورة</dt><dd>{{ $profitability['profit'] === null ? 'غير موثوق' : \App\Support\Decimal::format($profitability['profit']) }}</dd></div>
+                <div><dt>هامش الربح</dt><dd>{{ $profitability['margin'] === null ? '—' : $profitability['margin'].'٪' }}</dd></div>
+            </dl>
+            <small>التكلفة التاريخية المسجلة وقت البيع؛ بعد عكس المرتجعات. لا تشمل الخانات الإضافية أو المصاريف العامة.</small>
+        </section>
+    @endif
 </div>
 @endsection

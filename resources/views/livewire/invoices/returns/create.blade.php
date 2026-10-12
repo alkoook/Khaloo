@@ -42,7 +42,7 @@
                                 </div>
                                 <div class="w-full sm:w-32">
                                     <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">كمية الإرجاع</label>
-                                    <input type="number" wire:model.live="returnQuantities.{{ $line['id'] }}" min="0" max="{{ $line['quantity'] }}" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2 text-center" style="background: var(--app-card); border-color: var(--app-border); color: var(--app-text);">
+                                    <input type="number" wire:model.live="returnQuantities.{{ $line['id'] }}" min="0" step="0.001" max="{{ $line['quantity'] }}" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2 text-center" style="background: var(--app-card); border-color: var(--app-border); color: var(--app-text);">
                                 </div>
                             </div>
                         @endforeach

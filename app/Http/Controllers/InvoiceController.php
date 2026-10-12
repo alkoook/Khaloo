@@ -8,8 +8,11 @@ use App\Services\FinancialService;
 use App\Services\InvoiceCancellationService;
 use App\Services\InvoiceService;
 use App\Services\SettingsService;
+use App\Services\WindowsReceiptCutter;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -25,6 +28,7 @@ class InvoiceController extends Controller
 
         return view('invoices.show', [
             'invoice' => $invoice,
+            'profitability' => $invoice->isSale() ? app(\App\Services\SalesAccountingService::class)->profitability($invoice) : null,
             'currentPartnerBalance' => $balance,
             'settings' => $settings,
             'editBlockReason' => $invoiceService->editBlockReason($invoice),
@@ -60,6 +64,27 @@ class InvoiceController extends Controller
             'invoice' => $invoice->load(['partner', 'lines', 'additionalLines', 'originalInvoice']),
             'settings' => $settings,
         ]);
+    }
+
+    public function cutReceipt(Request $request, Invoice $invoice, WindowsReceiptCutter $cutter): JsonResponse
+    {
+        abort_unless($invoice->isSale() || $invoice->isPurchase() || $invoice->isReturn(), 404);
+        $validated = $request->validate(['print_token' => ['required', 'uuid']]);
+        $cacheKey = 'receipt-cut:'.$request->user()->id.':'.$validated['print_token'];
+
+        if (! Cache::add($cacheKey, true, now()->addMinutes(10))) {
+            return response()->json(['status' => 'duplicate']);
+        }
+
+        try {
+            $result = $cutter->cut();
+        } catch (\Throwable $exception) {
+            Cache::forget($cacheKey);
+
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json(['status' => $result['enabled'] ? 'cut' : 'disabled', 'printer' => $result['printer']]);
     }
 
     public function createSales(): View

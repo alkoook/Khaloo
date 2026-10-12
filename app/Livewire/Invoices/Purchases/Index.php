@@ -92,7 +92,7 @@ class Index extends Component
                     'product_name' => $line->product_name ?? 'منتج',
                     'qty' => $line->quantity,
                     'price' => number_format((float) $line->unit_price, 2),
-                    'line_total' => number_format((float) ($line->quantity * $line->unit_price), 2),
+                    'line_total' => \App\Support\Decimal::format($line->net_line_total ?? $line->line_total),
                 ];
             }
         }

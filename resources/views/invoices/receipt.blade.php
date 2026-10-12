@@ -29,21 +29,11 @@
 
     $invoiceNumber = '#'.$invoice->getKey();
 
-    $itemsSubtotal = (float) (
-        $invoice->subtotal
-        ?: $invoice->lines->sum('line_total')
-    );
+    $itemsSubtotal = \App\Support\Decimal::cmp($invoice->subtotal, 0) > 0
+        ? $invoice->subtotal : \App\Support\Decimal::sum($invoice->lines->pluck('line_total'));
 
-    $discount = (float) (
-        $invoice->discount_amount
-        ?: max(
-            0,
-            round(
-                $itemsSubtotal - (float) $invoice->total,
-                2
-            )
-        )
-    );
+    $discount = \App\Support\Decimal::cmp($invoice->discount_amount, 0) > 0
+        ? $invoice->discount_amount : \App\Support\Decimal::max(0, \App\Support\Decimal::sub($itemsSubtotal, $invoice->total));
 
     $printFonts = [
         'cairo' => 'Cairo, Tahoma, Arial, sans-serif',
@@ -55,6 +45,8 @@
     $printFont = $printFonts[
         $settings->get('font_family', 'cairo')
     ] ?? $printFonts['cairo'];
+
+    $receiptFontSize = max(10, min(16, (int) $settings->get('receipt_font_size', 12)));
 @endphp
 
 <!DOCTYPE html>
@@ -67,6 +59,7 @@
         name="viewport"
         content="width=device-width, initial-scale=1"
     >
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>
         {{ $typeLabel }} {{ $invoiceNumber }}
@@ -83,12 +76,13 @@
         :root {
             --receipt-width: {{ $width }}mm;
             --receipt-font: {!! $printFont !!};
+            --receipt-font-scale: {{ $receiptFontSize / 12 }};
         }
     </style>
     <style id="receipt-page-size"></style>
 </head>
 
-<body class="receipt-page" data-document-kind="{{ $invoice->isReturn() ? 'return' : 'invoice' }}" data-preview-theme="{{ $settings->get('theme', 'arctic-cobalt') }}">
+<body class="receipt-page" data-document-kind="{{ $invoice->isReturn() ? 'return' : 'invoice' }}" data-preview-theme="{{ $settings->get('theme', 'arctic-cobalt') }}" data-auto-cut="{{ $settings->get('receipt_auto_cut', true) ? '1' : '0' }}" data-cut-url="{{ route('invoices.receipt.cut', $invoice) }}">
 
 <div class="receipt-preview">
 
@@ -284,7 +278,7 @@
                         </td>
 
                         <td class="receipt-number">
-                            {{ number_format((float) $line->quantity) }}
+                            {{ \App\Support\Decimal::displayQuantity($line->quantity) }}
                         </td>
 
                         <td class="receipt-number">
@@ -422,7 +416,7 @@
                 <b>
                     {{ number_format(
                         $invoice->isReturn()
-                            ? max(0, (float) $invoice->total - (float) $invoice->amount_paid)
+                            ? \App\Support\Decimal::max(0, \App\Support\Decimal::sub($invoice->total, $invoice->amount_paid))
                             : (float) $invoice->remaining,
                         2
                     ) }}
@@ -527,6 +521,11 @@
         const PRINT_PAGE_ROUNDING_MM = 2.5;
         const pageStyle = document.getElementById('receipt-page-size');
         let printInProgress = false;
+        let activePrintToken = null;
+        const printToken = () => window.crypto?.randomUUID?.()
+            ?? '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (character) => (
+                Number(character) ^ (window.crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(character) / 4)))
+            ).toString(16));
 
         const nextPaint = () => new Promise((resolve) => {
             requestAnimationFrame(() => requestAnimationFrame(resolve));
@@ -588,18 +587,25 @@
             }
 
             printInProgress = true;
+            activePrintToken = printToken();
 
             try {
                 await prepareReceiptForPrint();
                 window.print();
             } catch (_) {
                 printInProgress = false;
+                activePrintToken = null;
             }
         };
 
         addEventListener('beforeprint', applyReceiptPageSize);
         addEventListener('afterprint', () => {
+            const completedPrintToken = activePrintToken;
             printInProgress = false;
+            activePrintToken = null;
+            if (completedPrintToken) {
+                window.requestReceiptCut?.(completedPrintToken);
+            }
         });
 
         addEventListener('load', async () => {

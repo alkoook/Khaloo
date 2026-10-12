@@ -28,7 +28,7 @@ class Product extends Model
         return [
             'purchase_price' => 'decimal:4',
             'sale_price' => 'decimal:2',
-            'quantity' => 'integer',
+            'quantity' => 'decimal:3',
             'alert_stock_at' => 'integer',
             'total_purchase_amount' => 'decimal:2',
             'paid_purchase_amount' => 'decimal:2',

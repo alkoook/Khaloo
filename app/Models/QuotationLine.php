@@ -11,7 +11,7 @@ class QuotationLine extends Model
 
     protected function casts(): array
     {
-        return ['quantity' => 'integer', 'unit_price' => 'decimal:2', 'line_total' => 'decimal:2'];
+        return ['quantity' => 'decimal:3', 'unit_price' => 'decimal:2', 'line_total' => 'decimal:2'];
     }
 
     public function quotation(): BelongsTo { return $this->belongsTo(Quotation::class); }

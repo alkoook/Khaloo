@@ -38,7 +38,7 @@ test('product master creation has no purchase stock ledger or financial side eff
         ->call('save')->assertHasNoErrors();
 
     $product = Product::query()->sole();
-    expect($product->quantity)->toBe(0)
+    expect($product->quantity)->toBe('0.000')
         ->and($product->purchase_price)->toBeNull()
         ->and($product->sale_price)->toBeNull()
         ->and(Invoice::query()->count())->toBe(0)
@@ -53,10 +53,10 @@ test('fixed and percentage pricing are validated and allocated to exact cents', 
     ], 'fixed', 10);
     $percentage = $service->calculate([['quantity' => 2, 'unit_price' => 25]], 'percentage', 10);
 
-    expect($fixed['subtotal'])->toBe(100.0)->and($fixed['discount_amount'])->toBe(10.0)->and($fixed['total'])->toBe(90.0)
+    expect($fixed['subtotal'])->toBe('100.00')->and($fixed['discount_amount'])->toBe('10.00')->and($fixed['total'])->toBe('90.00')
         ->and(collect($fixed['lines'])->sum('discount_amount'))->toBe(10.0)
         ->and(collect($fixed['lines'])->sum('net_line_total'))->toBe(90.0)
-        ->and($percentage['discount_amount'])->toBe(5.0)->and($percentage['total'])->toBe(45.0);
+        ->and($percentage['discount_amount'])->toBe('5.00')->and($percentage['total'])->toBe('45.00');
 });
 
 test('sales discount reduces net sales and receivable but not cogs', function () {
@@ -71,8 +71,8 @@ test('sales discount reduces net sales and receivable but not cogs', function ()
     $balancePartner = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($customer->id);
     $summary = app(FinancialStatusService::class)->summary();
     expect((float) $invoice->subtotal)->toBe(100.0)->and((float) $invoice->discount_amount)->toBe(10.0)->and((float) $invoice->total)->toBe(90.0)
-        ->and(app(FinancialService::class)->receivable($balancePartner))->toBe(60.0)
-        ->and($summary['net_sales'])->toBe(90.0)->and($summary['cogs'])->toBe(50.0)->and($summary['net_profit'])->toBe(40.0);
+        ->and(app(FinancialService::class)->receivable($balancePartner))->toBe('60.00')
+        ->and($summary['net_sales'])->toBe('90.00')->and($summary['cogs'])->toBe('50.00')->and($summary['net_profit'])->toBe('40.00');
 });
 
 test('purchase discount becomes net inventory cost and supplier debt', function () {
@@ -88,7 +88,7 @@ test('purchase discount becomes net inventory cost and supplier debt', function 
     $balancePartner = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($supplier->id);
     expect((float) $invoice->total)->toBe(80.0)->and((float) $line->net_line_total)->toBe(80.0)
         ->and((float) $line->purchase_price)->toBe(8.0)->and((float) $product->fresh()->purchase_price)->toBe(9.0)
-        ->and(app(FinancialService::class)->payable($balancePartner))->toBe(50.0);
+        ->and(app(FinancialService::class)->payable($balancePartner))->toBe('50.00');
 });
 
 test('discounted partial and multiple returns use net line value', function () {
@@ -101,8 +101,8 @@ test('discounted partial and multiple returns use net line value', function () {
     $second = app(ReturnService::class)->processSalesReturn($invoice->fresh(), 27, [$line->id => 3]);
 
     expect((float) $first->total)->toBe(18.0)->and((float) $second->total)->toBe(27.0)
-        ->and((float) $invoice->fresh()->total)->toBe(45.0)->and($line->fresh()->quantity)->toBe(5)
-        ->and((float) $line->fresh()->net_line_total)->toBe(45.0)->and($product->fresh()->quantity)->toBe(5);
+        ->and((float) $invoice->fresh()->total)->toBe(45.0)->and($line->fresh()->quantity)->toBe('5.000')
+        ->and((float) $line->fresh()->net_line_total)->toBe(45.0)->and($product->fresh()->quantity)->toBe('5.000');
 });
 
 test('a later settlement does not recreate revenue and blocks unsafe invoice edits', function () {

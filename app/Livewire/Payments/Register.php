@@ -8,6 +8,7 @@ use App\Services\AlertService;
 use App\Services\FinancialService;
 use App\Services\SettingsService;
 use App\Services\TelegramService;
+use App\Support\Decimal as D;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -118,13 +119,13 @@ class Register extends Component
             'settlementDate.required' => 'أدخل تاريخ الدفعة.',
         ]);
 
-        $amount = (float) $this->amount;
+        $amount = D::scale($this->amount);
         $financials = app(FinancialService::class);
         $partner = $financials->partnerBalancesQuery()->findOrFail($this->partnerId);
         $side = $this->settlementType === LedgerSettlement::TYPE_INCOMING ? 'receivable' : 'payable';
         $available = $financials->balanceFor($partner, $side);
 
-        if ($amount > $available) {
+        if (D::cmp($amount, $available) > 0) {
             $this->addError('amount', 'قيمة الدفعة أكبر من الرصيد المستحق لهذا الطرف.');
 
             return;
@@ -165,23 +166,23 @@ class Register extends Component
             ->sortBy('name')->values();
     }
 
-    public function getCurrentBalanceProperty(): float
+    public function getCurrentBalanceProperty(): string
     {
         if (! $this->partnerId) {
-            return 0.0;
+            return '0.00';
         }
         $financials = app(FinancialService::class);
         $partner = $financials->partnerBalancesQuery()->find($this->partnerId);
         if (! $partner) {
-            return 0.0;
+            return '0.00';
         }
 
         return $financials->balanceFor($partner, $this->settlementType === 'incoming' ? 'receivable' : 'payable');
     }
 
-    public function getExpectedBalanceProperty(): float
+    public function getExpectedBalanceProperty(): string
     {
-        return max(0, round($this->currentBalance - (float) ($this->amount === '' ? 0 : $this->amount), 2));
+        return D::scale(D::max(0, D::sub($this->currentBalance, $this->amount)));
     }
 
     public function render()

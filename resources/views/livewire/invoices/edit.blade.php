@@ -16,7 +16,7 @@
                 <div class="p-6">
                     <h2 class="text-lg font-semibold mb-4" style="color: var(--app-text)">تفاصيل المنتجات</h2>
                     
-                    <div class="product-picker"><label>إضافة منتج بالاسم أو الرقم أو التصنيف</label><input x-ref="productSearch" wire:model.live.debounce.220ms="productSearch" placeholder="اكتب للبحث…" autocomplete="off" @input="activeResult=0;resultsOpen=true" @keydown.arrow-down.prevent.stop="activeResult=Math.min(activeResult+1,Math.max(0,$refs.productResults?.querySelectorAll('button').length-1))" @keydown.arrow-up.prevent.stop="activeResult=Math.max(activeResult-1,0)" @keydown.enter.prevent.stop="if(resultsOpen){$refs.productResults?.querySelectorAll('button')[activeResult]?.click()}" @keydown.escape.prevent.stop="resultsOpen=false;activeResult=0;$nextTick(()=>$refs.productSearch.focus())">@if($productSearch!=='')<div x-ref="productResults" x-show="resultsOpen" class="picker-results">@forelse($productResults as $product)<button type="button" wire:click="selectProduct({{ $product->id }})" @mouseenter="activeResult={{ $loop->index }}" :class="activeResult==={{ $loop->index }}&&'is-keyboard-active'"><strong>{{ $product->name }}</strong><small>#{{ $product->id }} · {{ $product->category?->name }}</small><b>{{ number_format((float) ($invoice->isSale() ? $product->sale_price : $product->purchase_price), 2) }}</b></button>@empty<div class="empty-result">لا توجد نتائج مطابقة</div>@endforelse</div>@endif</div>
+                    <div class="product-picker"><label>إضافة منتج بالاسم أو الرقم أو التصنيف</label><input x-ref="productSearch" wire:model.live.debounce.220ms="productSearch" placeholder="اكتب للبحث…" autocomplete="off" @input="activeResult=0;resultsOpen=true" @keydown.arrow-down.prevent.stop="activeResult=Math.min(activeResult+1,Math.max(0,$refs.productResults?.querySelectorAll('button:not(:disabled)').length-1))" @keydown.arrow-up.prevent.stop="activeResult=Math.max(activeResult-1,0)" @keydown.enter.prevent.stop="if(resultsOpen){$refs.productResults?.querySelectorAll('button:not(:disabled)')[activeResult]?.click()}" @keydown.escape.prevent.stop="resultsOpen=false;activeResult=0;$nextTick(()=>$refs.productSearch.focus())">@if($productSearch!=='')<div x-ref="productResults" x-show="resultsOpen" class="picker-results">@forelse($productResults as $product)@php $available = $product->available_for_invoice; @endphp<button type="button" wire:click="selectProduct({{ $product->id }})" @disabled($invoice->isSale() && $available <= 0) @mouseenter="if(!$el.disabled) activeResult=Array.from($refs.productResults.querySelectorAll('button:not(:disabled)')).indexOf($el)" :class="activeResult===Array.from($refs.productResults?.querySelectorAll('button:not(:disabled)')??[]).indexOf($el)&&!$el.disabled&&'is-keyboard-active'"><strong>{{ $product->name }}</strong><small>#{{ $product->id }} · {{ $product->category?->name }}@if($invoice->isSale()) · {{ $available > 0 ? 'المتاح للتعديل: '.$available : 'نفد المخزون · المخزون: 0' }}@endif</small><b>{{ number_format((float) ($invoice->isSale() ? $product->sale_price : $product->purchase_price), 2) }}</b></button>@empty<div class="empty-result">لا توجد نتائج مطابقة</div>@endforelse</div>@endif</div>
                     <div class="space-y-4">
                         @foreach($lines as $index => $line)
                             <div class="flex flex-col sm:flex-row gap-4 p-4 rounded-xl border relative" style="background: var(--app-bg); border-color: var(--app-border);">
@@ -25,14 +25,14 @@
                                     <select wire:model.live="lines.{{ $index }}.product_id" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-card); border-color: var(--app-border); color: var(--app-text);">
                                         <option value="">اختر المنتج...</option>
                                         @foreach($products as $product)
-                                            <option value="{{ $product['id'] }}">{{ $product['name'] }}</option>
+                                            <option value="{{ $product['id'] }}" @disabled($invoice->isSale() && $product['available_for_invoice'] <= 0)>{{ $product['name'] }}{{ $invoice->isSale() ? ($product['available_for_invoice'] > 0 ? ' — المتاح: '.$product['available_for_invoice'] : ' — نفد المخزون') : '' }}</option>
                                         @endforeach
                                     </select>
                                     @error("lines.{$index}.product_id") <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                                 </div>
                                 <div class="w-full sm:w-24">
                                     <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">الكمية</label>
-                                    <input type="number" wire:model="lines.{{ $index }}.quantity" min="1" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-card); border-color: var(--app-border); color: var(--app-text);">
+                                    <input type="number" wire:model="lines.{{ $index }}.quantity" min="0.001" step="0.001" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-card); border-color: var(--app-border); color: var(--app-text);">
                                 </div>
                                 <div class="w-full sm:w-32">
                                     <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">السعر الإفرادي</label>
@@ -63,7 +63,7 @@
             @if($invoice->isSale())
                 <div class="rounded-2xl border overflow-hidden" style="background: var(--app-card); border-color: var(--app-border);">
                     <div class="p-6"><h2 class="text-lg font-semibold">خانات إضافية</h2><p class="text-sm mt-1 mb-4" style="color:var(--app-muted)">مبالغ مستردة من العميل ولا تؤثر في المخزون أو مبيعات المنتجات أو الربح.</p>
-                        <div class="additional-lines">@foreach($additionalLines as $index=>$line)<article wire:key="edit-additional-{{ $index }}"><label>اسم الغرض<input wire:model.live="additionalLines.{{ $index }}.description"></label><label>الكمية<input type="number" min="0.001" step="0.001" wire:model.live="additionalLines.{{ $index }}.quantity"></label><label>المبلغ الإفرادي<input type="number" min="0" step="0.01" wire:model.live="additionalLines.{{ $index }}.unit_amount"></label><label>المصدر / ملاحظة<input wire:model="additionalLines.{{ $index }}.source_note"></label><b>{{ number_format((float)($line['quantity']??0)*(float)($line['unit_amount']??0),2) }}</b><button type="button" class="icon-danger" wire:click="removeAdditionalLine({{ $index }})">×</button></article>@endforeach</div>
+                        <div class="additional-lines">@foreach($additionalLines as $index=>$line)<article wire:key="edit-additional-{{ $index }}"><label>اسم الغرض<input wire:model.live="additionalLines.{{ $index }}.description"></label><label>الكمية<input type="number" min="0.001" step="0.001" wire:model.live="additionalLines.{{ $index }}.quantity"></label><label>المبلغ الإفرادي<input type="number" min="0" step="0.01" wire:model.live="additionalLines.{{ $index }}.unit_amount"></label><label>المصدر / ملاحظة<input wire:model="additionalLines.{{ $index }}.source_note"></label><b>{{ \App\Support\Decimal::format(\App\Support\Decimal::mul($line['quantity'] ?: 0, $line['unit_amount'] ?: 0)) }}</b><button type="button" class="icon-danger" wire:click="removeAdditionalLine({{ $index }})">×</button></article>@endforeach</div>
                         <button type="button" wire:click="addAdditionalLine" class="secondary-button">＋ إضافة خانة</button>
                     </div>
                 </div>
@@ -77,7 +77,8 @@
                     
                     <div>
                         <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">المبلغ المدفوع</label>
-                        <input type="number" step="0.01" wire:model="amountPaid" min="0" placeholder="غير مدفوع" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                        <input type="number" step="0.01" wire:model="amountPaid" min="0" @readonly(!$invoice->created_at->isToday()) placeholder="غير مدفوع" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                        @if(!$invoice->created_at->isToday())<small>دفعة إنشاء الفاتورة محفوظة؛ سجّل الدفعات اللاحقة من سجل الدفعات بتاريخها الفعلي.</small>@endif
                         @error('amountPaid') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
                     <div><label class="block text-sm font-medium mb-1">نوع الحسم</label><select wire:model.live="discountType" class="w-full"><option value="fixed">مبلغ ثابت</option><option value="percentage">نسبة مئوية</option></select></div>
@@ -87,12 +88,6 @@
                         @if($hasDelivery)<div><label class="block text-sm font-medium mb-1">مبلغ التوصيل</label><input type="number" min="0" step="0.01" wire:model.live="deliveryAmount">@error('deliveryAmount')<small class="field-error">{{ $message }}</small>@enderror</div>@endif
                     @endif
                     
-                    @php
-                        $total = 0;
-                        foreach($lines as $l) {
-                            $total += floatval($l['quantity'] ?? 0) * floatval($l['unit_price'] ?? 0);
-                        }
-                    @endphp
                     
                     <div class="pt-4 border-t space-y-3" style="border-color: var(--app-border);">
                         <div class="flex justify-between text-sm">
@@ -108,7 +103,7 @@
                 
                 <div class="p-4 border-t" style="background: var(--app-bg); border-color: var(--app-border);">
                     <button wire:click="saveEdit" wire:loading.attr="disabled" class="w-full flex items-center justify-center px-4 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-70" style="background: var(--app-primary);">
-                        <span wire:loading.remove wire:target="saveEdit">حفظ التعديلات (Delta)</span>
+                        <span wire:loading.remove wire:target="saveEdit">حفظ التعديلات</span>
                         <span wire:loading wire:target="saveEdit">جاري الحفظ...</span>
                     </button>
                 </div>

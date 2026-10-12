@@ -1,0 +1,93 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Invoice;
+use App\Support\Decimal as D;
+use Illuminate\Support\Collection;
+
+class SalesAccountingService
+{
+    /** Remaining sale lines are already reduced by returns. Never subtract a return twice. */
+    public function profitability(Invoice $invoice): array
+    {
+        $invoice->loadMissing('lines');
+        $active = $invoice->isSale() && ! $invoice->isCancelled();
+        $cost = $this->cost($active ? $invoice->lines : collect());
+        $net = $active ? D::scale($invoice->total) : '0.00';
+        $delivery = $active ? D::scale($invoice->delivery_amount) : '0.00';
+        $revenue = D::add($net, $delivery);
+        $profit = $cost['unknown'] ? null : D::sub($revenue, $cost['total']);
+
+        return ['net_merchandise' => $net, 'delivery' => $delivery, 'cogs' => $cost['unknown'] ? null : D::scale($cost['total']),
+            'profit' => $profit, 'margin' => $profit !== null && D::cmp($revenue, 0) > 0
+                ? D::div(D::of($profit)->multipliedBy(100), $revenue) : null,
+            'unknown_cost_lines' => $cost['unknown'], 'active' => $active];
+    }
+
+    /**
+     * Reconstruct the issue event, then reverse each return on its own date.
+     * This also restores quantities/revenue returned AFTER a historical reporting period.
+     */
+    public function activity(?string $from = null, ?string $to = null, ?int $partnerId = null, ?int $categoryId = null): Collection
+    {
+        $events = collect();
+        $sales = Invoice::query()->active()->where('type', Invoice::TYPE_SALE)
+            ->when($partnerId, fn ($q) => $q->where('partner_id', $partnerId))
+            ->when($from || $to, fn ($q) => $q->where(function ($q) use ($from, $to) {
+                $q->where(fn ($q) => $q->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+                    ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to)))
+                    ->orWhereHas('returns', fn ($q) => $q->active()->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+                        ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to)));
+            }))
+            ->with(['partner', 'lines.product', 'returns' => fn ($q) => $q->active(), 'returns.lines.product'])->get();
+        foreach ($sales as $sale) {
+            $selectLines = fn ($lines) => $categoryId ? $lines->filter(fn ($line) => (int) $line->product?->category_id === $categoryId) : $lines;
+            $remaining = $selectLines($sale->lines);
+            $returned = $sale->returns->flatMap(fn ($return) => $selectLines($return->lines));
+            $allLines = $remaining->concat($returned);
+            $cost = $this->cost($allLines);
+            $merchandise = $categoryId ? D::sum($allLines->map(fn ($line) => $line->net_line_total ?? $line->line_total))
+                : D::add($sale->total, D::sum($sale->returns->pluck('total')));
+            $subtotal = D::sum($allLines->pluck('line_total'));
+            if (! $categoryId && D::cmp($sale->subtotal, 0) > 0) {
+                $subtotal = D::add($sale->subtotal, D::sum($sale->returns->pluck('subtotal')));
+            }
+            if ($this->inPeriod($sale->created_at->toDateString(), $from, $to) && (! $categoryId || $allLines->isNotEmpty())) {
+                $events->push(['invoice' => $sale, 'date' => $sale->created_at, 'merchandise' => $merchandise,
+                    'delivery' => $categoryId ? '0.00' : D::scale($sale->delivery_amount),
+                    'cost' => $cost['total'], 'unknown' => $cost['unknown'], 'quantity' => D::sum($allLines->pluck('quantity'), 3),
+                    'subtotal' => $subtotal, 'discount' => D::sub($subtotal, $merchandise),
+                    'line_count' => $allLines->unique(fn ($line) => $line->product_id ?? $line->product_name)->count()]);
+            }
+            foreach ($sale->returns as $return) {
+                $lines = $selectLines($return->lines);
+                if (! $this->inPeriod($return->created_at->toDateString(), $from, $to) || ($categoryId && $lines->isEmpty())) {
+                    continue;
+                }
+                $cost = $this->cost($lines);
+                $net = $categoryId ? D::sum($lines->map(fn ($line) => $line->net_line_total ?? $line->line_total)) : $return->total;
+                $returnSubtotal = D::sum($lines->pluck('line_total'));
+                $events->push(['invoice' => $return, 'date' => $return->created_at, 'merchandise' => D::sub(0, $net),
+                    'delivery' => '0.00', 'cost' => D::sub(0, $cost['total'], 7), 'unknown' => $cost['unknown'],
+                    'quantity' => D::sub(0, D::sum($lines->pluck('quantity'), 3), 3),
+                    'subtotal' => D::sub(0, $returnSubtotal), 'discount' => D::sub(0, D::sub($returnSubtotal, $net)), 'line_count' => $lines->count()]);
+            }
+        }
+
+        return $events->sortBy('date')->values();
+    }
+
+    private function cost(Collection $lines): array
+    {
+        $positive = $lines->filter(fn ($line) => D::cmp($line->quantity, 0) > 0);
+
+        return ['total' => D::sum($positive->map(fn ($line) => D::mul($line->quantity, $line->purchase_price ?? 0, 7)), 7),
+            'unknown' => $positive->whereNull('purchase_price')->count()];
+    }
+
+    private function inPeriod(string $date, ?string $from, ?string $to): bool
+    {
+        return (! $from || $date >= $from) && (! $to || $date <= $to);
+    }
+}

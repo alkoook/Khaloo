@@ -7,6 +7,7 @@ use App\Services\AlertService;
 use App\Services\FinancialService;
 use App\Services\SettingsService;
 use App\Services\TelegramService;
+use App\Support\Decimal as D;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -102,8 +103,8 @@ class Index extends Component
         ]);
         $partner = $financials->partnerBalancesQuery()->findOrFail($this->paymentPartnerId);
         $available = $financials->balanceFor($partner, $this->tab);
-        $amount = round((float) $this->paymentAmount, 2);
-        if ($amount > $available) {
+        $amount = D::scale($this->paymentAmount);
+        if (D::cmp($amount, $available) > 0) {
             $this->addError('paymentAmount', 'المبلغ أكبر من الرصيد المستحق الحالي.');
 
             return;
@@ -212,7 +213,7 @@ class Index extends Component
             return;
         }
 
-        $settledAmount = (float) $row['balance'];
+        $settledAmount = $row['balance'];
         try {
             app(FinancialService::class)->recordSettlement($partnerId, $type, $settledAmount, now()->toDateString(), 'تسوية كاملة من شاشة الدفتر');
         } catch (ValidationException) {
@@ -233,20 +234,20 @@ class Index extends Component
         return $this->getBalances($this->tab)->pluck('partner');
     }
 
-    public function getCurrentPaymentBalanceProperty(): float
+    public function getCurrentPaymentBalanceProperty(): string
     {
         if (! $this->paymentPartnerId) {
-            return 0.0;
+            return '0.00';
         }
         $financials = app(FinancialService::class);
         $partner = $financials->partnerBalancesQuery()->find($this->paymentPartnerId);
 
-        return $partner ? $financials->balanceFor($partner, $this->tab) : 0.0;
+        return $partner ? $financials->balanceFor($partner, $this->tab) : '0.00';
     }
 
-    public function getExpectedPaymentBalanceProperty(): float
+    public function getExpectedPaymentBalanceProperty(): string
     {
-        return max(0, round($this->currentPaymentBalance - (float) ($this->paymentAmount === '' ? 0 : $this->paymentAmount), 2));
+        return D::scale(D::max(0, D::sub($this->currentPaymentBalance, $this->paymentAmount)));
     }
 
     public function render()

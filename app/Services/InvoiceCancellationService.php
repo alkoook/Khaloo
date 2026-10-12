@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\LedgerSettlement;
 use App\Models\Product;
+use App\Support\Decimal as D;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -45,11 +46,11 @@ class InvoiceCancellationService
         $products = Product::query()->whereIn('id', $productIds)->get()->keyBy('id');
         foreach ($lines->groupBy('product_id') as $productId => $productLines) {
             $product = $products->get($productId);
-            $quantity = $productLines->sum('quantity');
-            if (! $product || $product->quantity < $quantity) {
+            $quantity = D::sum($productLines->pluck('quantity'), 3);
+            if (! $product || D::cmp($product->quantity, $quantity) < 0) {
                 return 'لا يمكن إلغاء الفاتورة لأن جزءًا من الكمية تم بيعه أو استهلاكه.';
             }
-            if ($product->purchase_price === null && $product->quantity > $quantity) {
+            if ($product->purchase_price === null && D::cmp($product->quantity, $quantity) > 0) {
                 return "لا يمكن إعادة احتساب تكلفة مخزون «{$product->name}» لأن تكلفته الحالية غير موثقة.";
             }
         }
@@ -81,7 +82,8 @@ class InvoiceCancellationService
                 }
                 foreach ($lines as $line) {
                     if ($line->product_id && $products->has($line->product_id)) {
-                        $products->get($line->product_id)->increment('quantity', $line->quantity);
+                        $product = $products->get($line->product_id);
+                        app(InventoryCostService::class)->restoreSaleStock($product, $line->quantity, $line->purchase_price);
                     }
                 }
             } else {
@@ -99,17 +101,17 @@ class InvoiceCancellationService
                         continue;
                     }
                     $product = $products->get($line->product_id);
-                    if (! $product || $product->quantity < $line->quantity) {
+                    if (! $product || D::cmp($product->quantity, $line->quantity) < 0) {
                         throw ValidationException::withMessages(['cancellationReason' => 'لا يمكن إلغاء فاتورة الشراء لأن جزءًا من كمياتها لم يعد متوفرًا.']);
                     }
-                    if ($product->purchase_price === null && $product->quantity > $line->quantity) {
+                    if ($product->purchase_price === null && D::cmp($product->quantity, $line->quantity) > 0) {
                         throw ValidationException::withMessages(['cancellationReason' => "لا يمكن إعادة احتساب تكلفة مخزون «{$product->name}» لأن تكلفته الحالية غير موثقة."]);
                     }
-                    $remainingQuantity = $product->quantity - $line->quantity;
-                    $remainingValue = round(($product->quantity * (float) $product->purchase_price) - (float) ($line->net_line_total ?? $line->line_total), 4);
+                    $remainingQuantity = D::sub($product->quantity, $line->quantity, 3);
+                    $remainingValue = D::of($product->quantity)->multipliedBy($product->purchase_price ?? 0)->minus($line->net_line_total ?? $line->line_total);
                     $product->update([
                         'quantity' => $remainingQuantity,
-                        'purchase_price' => $remainingQuantity > 0 ? max(0, round($remainingValue / $remainingQuantity, 4)) : null,
+                        'purchase_price' => D::cmp($remainingQuantity, 0) > 0 ? D::max(0, D::div($remainingValue, $remainingQuantity, 4)) : null,
                     ]);
                 }
             }

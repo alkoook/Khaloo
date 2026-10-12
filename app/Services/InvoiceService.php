@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\LedgerSettlement;
 use App\Models\Product;
+use App\Support\Decimal as D;
 use Exception;
 use Illuminate\Support\Facades\DB;
 
@@ -45,7 +46,7 @@ class InvoiceService
         $products = Product::query()->whereIn('id', $productIds)->get()->keyBy('id');
         foreach ($lines->groupBy('product_id') as $productId => $productLines) {
             $product = $products->get($productId);
-            if (! $product || $product->quantity < $productLines->sum('quantity')) {
+            if (! $product || D::cmp($product->quantity, D::sum($productLines->pluck('quantity'), 3)) < 0) {
                 return 'لا يمكن تعديل الفاتورة لأن جزءًا من الكمية تم بيعه أو استهلاكه.';
             }
         }
@@ -53,7 +54,7 @@ class InvoiceService
         return null;
     }
 
-    public function updateInvoice(Invoice $invoice, array $newLines, float $newAmountPaid, ?string $discountType = null, mixed $discountValue = null, array $additionalLines = [], float $deliveryAmount = 0): Invoice
+    public function updateInvoice(Invoice $invoice, array $newLines, mixed $newAmountPaid, ?string $discountType = null, mixed $discountValue = null, array $additionalLines = [], mixed $deliveryAmount = 0): Invoice
     {
         if ($invoice->isReturn()) {
             throw new Exception('لا يمكن تعديل فاتورة مرتجع مباشرة.');
@@ -62,33 +63,34 @@ class InvoiceService
         if (count($ids) !== count(array_unique($ids))) {
             throw new Exception('لا يمكن تكرار المنتج في الفاتورة.');
         }
+        $newAmountPaid = D::scale($newAmountPaid);
         $calculation = $this->pricing->calculate($newLines, $discountType, $discountValue);
-        $deliveryAmount = $invoice->isSale() ? round($deliveryAmount, 2) : 0.0;
-        if (! is_finite($deliveryAmount) || $deliveryAmount < 0) {
+        $deliveryAmount = $invoice->isSale() ? D::scale($deliveryAmount) : '0.00';
+        if (D::cmp($deliveryAmount, 0) < 0) {
             throw new Exception('قيمة التوصيل غير صالحة.');
         }
         $normalizedAdditionalLines = [];
         foreach ($invoice->isSale() ? $additionalLines : [] as $line) {
             $description = trim((string) ($line['description'] ?? ''));
-            $quantity = round((float) ($line['quantity'] ?? 0), 3);
-            $unitAmount = round((float) ($line['unit_amount'] ?? 0), 2);
-            if ($description === '' || ! is_finite($quantity) || $quantity <= 0 || ! is_finite($unitAmount) || $unitAmount < 0) {
+            $quantity = D::quantity($line['quantity'] ?? 0);
+            $unitAmount = D::scale($line['unit_amount'] ?? 0);
+            if ($description === '' || D::cmp($quantity, 0) <= 0 || D::cmp($unitAmount, 0) < 0) {
                 throw new Exception('بيانات إحدى الخانات الإضافية غير صالحة.');
             }
             $normalizedAdditionalLines[] = [
                 'description' => $description,
                 'quantity' => $quantity,
                 'unit_amount' => $unitAmount,
-                'row_total' => round($quantity * $unitAmount, 2),
+                'row_total' => D::mul($quantity, $unitAmount),
                 'source_note' => filled($line['source_note'] ?? null) ? trim((string) $line['source_note']) : null,
             ];
         }
-        $additionalTotal = round((float) collect($normalizedAdditionalLines)->sum('row_total'), 2);
-        $payableTotal = round((float) $calculation['total'] + $deliveryAmount + $additionalTotal, 2);
-        if ($calculation['total'] <= 0) {
+        $additionalTotal = D::sum(array_column($normalizedAdditionalLines, 'row_total'));
+        $payableTotal = D::sum([$calculation['total'], $deliveryAmount, $additionalTotal]);
+        if (D::cmp($calculation['total'], 0) <= 0) {
             throw new Exception('يجب أن يكون الإجمالي بعد الحسم أكبر من صفر.');
         }
-        if ($newAmountPaid < 0 || $newAmountPaid > $payableTotal) {
+        if (D::cmp($newAmountPaid, 0) < 0 || D::cmp($newAmountPaid, $payableTotal) > 0) {
             throw new Exception('المبلغ المدفوع يجب أن يكون بين صفر والإجمالي بعد الحسم.');
         }
 
@@ -98,6 +100,13 @@ class InvoiceService
                 throw new Exception($reason);
             }
 
+            if (! $lockedInvoice->created_at->isToday() && D::cmp($newAmountPaid, $lockedInvoice->amount_paid) !== 0) {
+                throw new Exception('لا يمكن تغيير دفعة إنشاء فاتورة سابقة؛ سجّل الدفع أو الاسترداد بتاريخ حدوثه من سجل الدفعات والتسويات.');
+            }
+            if (! $lockedInvoice->partner_id && D::cmp($newAmountPaid, $payableTotal) < 0) {
+                throw new Exception('لا يمكن ترك مبلغ متبقٍ على فاتورة نقدية بلا عميل أو مورد.');
+            }
+
             $oldLines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
             $productIds = collect($calculation['lines'])->pluck('product_id')->merge($oldLines->pluck('product_id'))->filter()->unique();
             $products = Product::query()->whereIn('id', $productIds)->lockForUpdate()->get()->keyBy('id');
@@ -105,22 +114,22 @@ class InvoiceService
                 throw new Exception('لا يمكن تعديل فاتورة الشراء بعد وجود حركة مخزون لاحقة لأحد أصنافها.');
             }
 
-            $oldQuantities = $oldLines->groupBy('product_id')->map->sum('quantity');
-            $oldNetValues = $oldLines->groupBy('product_id')->map(fn ($lines) => $lines->sum(fn ($line) => (float) ($line->net_line_total ?? $line->line_total)));
-            $stockBefore = $products->map(fn ($product) => ['quantity' => (int) $product->quantity, 'cost' => $product->purchase_price === null ? null : (float) $product->purchase_price]);
-            $newQuantities = collect($calculation['lines'])->groupBy('product_id')->map(fn ($lines) => collect($lines)->sum('quantity'));
+            $oldQuantities = $oldLines->groupBy('product_id')->map(fn ($lines) => D::sum($lines->pluck('quantity'), 3));
+            $oldNetValues = $oldLines->groupBy('product_id')->map(fn ($lines) => D::sum($lines->map(fn ($line) => $line->net_line_total ?? $line->line_total)));
+            $stockBefore = $products->map(fn ($product) => ['quantity' => $product->quantity, 'cost' => $product->purchase_price]);
+            $newQuantities = collect($calculation['lines'])->groupBy('product_id')->map(fn ($lines) => D::sum(collect($lines)->pluck('quantity'), 3));
             foreach ($productIds as $productId) {
                 $product = $products->get($productId);
                 if (! $product) {
                     throw new Exception('أحد المنتجات لم يعد موجودًا.');
                 }
-                $old = (int) ($oldQuantities[$productId] ?? 0);
-                $new = (int) ($newQuantities[$productId] ?? 0);
-                $stock = $lockedInvoice->isSale() ? $product->quantity + $old - $new : $product->quantity - $old + $new;
-                if ($stock < 0) {
+                $old = D::quantity($oldQuantities[$productId] ?? 0);
+                $new = D::quantity($newQuantities[$productId] ?? 0);
+                $stock = $lockedInvoice->isSale() ? D::sub(D::add($product->quantity, $old, 3), $new, 3) : D::add(D::sub($product->quantity, $old, 3), $new, 3);
+                if (D::cmp($stock, 0) < 0) {
                     throw new Exception("لا يمكن حفظ التعديل لأن مخزون «{$product->name}» لن يكون كافيًا.");
                 }
-                if ($lockedInvoice->isSale() && $new > 0 && $product->purchase_price === null) {
+                if ($lockedInvoice->isSale() && D::cmp($new, 0) > 0 && $product->purchase_price === null) {
                     throw new Exception("لا يمكن بيع «{$product->name}» دون تكلفة شراء موثوقة.");
                 }
                 $product->update(['quantity' => $stock]);
@@ -130,21 +139,21 @@ class InvoiceService
             $lockedInvoice->lines()->delete();
             foreach ($calculation['lines'] as $line) {
                 $product = $products->get((int) $line['product_id']);
-                $quantity = (int) $line['quantity'];
+                $quantity = D::quantity($line['quantity']);
                 $purchasePrice = $lockedInvoice->isPurchase()
-                    ? round((float) $line['net_line_total'] / $quantity, 4)
+                    ? D::div($line['net_line_total'], $quantity, 4)
                     : ($oldCostSnapshots->get($product->id)?->purchase_price ?? $product->purchase_price);
                 InvoiceLine::query()->create([
                     'invoice_id' => $lockedInvoice->id, 'product_id' => $product->id, 'product_name' => $product->name ?? 'منتج',
                     'quantity' => $quantity, 'unit_price' => $line['unit_price'], 'purchase_price' => $purchasePrice,
-                    'sale_price' => filled($line['sale_price'] ?? null) ? (float) $line['sale_price'] : null,
+                    'sale_price' => filled($line['sale_price'] ?? null) ? D::scale($line['sale_price']) : null,
                     'line_total' => $line['line_total'], 'discount_amount' => $line['discount_amount'], 'net_line_total' => $line['net_line_total'],
                 ]);
                 if ($lockedInvoice->isPurchase()) {
                     $before = $stockBefore->get($product->id);
-                    $baseValue = ($before['cost'] === null ? 0 : (int) $before['quantity'] * (float) $before['cost']) - (float) ($oldNetValues[$product->id] ?? 0);
-                    $averageCost = $product->quantity > 0 ? round((max(0, $baseValue) + (float) $line['net_line_total']) / $product->quantity, 4) : null;
-                    $product->update(array_filter(['purchase_price' => $averageCost, 'sale_price' => filled($line['sale_price'] ?? null) ? (float) $line['sale_price'] : null], fn ($value) => $value !== null));
+                    $baseValue = D::of($before['quantity'])->multipliedBy($before['cost'] ?? 0)->minus($oldNetValues[$product->id] ?? 0);
+                    $averageCost = D::cmp($product->quantity, 0) > 0 ? D::div(D::of(D::max(0, $baseValue))->plus($line['net_line_total']), $product->quantity, 4) : null;
+                    $product->update(array_filter(['purchase_price' => $averageCost, 'sale_price' => filled($line['sale_price'] ?? null) ? D::scale($line['sale_price']) : null], fn ($value) => $value !== null));
                 }
             }
 

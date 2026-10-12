@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Quotation;
 use App\Services\InvoicePricingService;
 use App\Services\QuotationService;
+use App\Support\Decimal as D;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -67,7 +68,7 @@ class Index extends Component
         $product = Product::query()->findOrFail($id);
         foreach ($this->lines as $index => $line) {
             if ((int) $line['product_id'] === $id) {
-                $this->lines[$index]['quantity']++;
+                $this->lines[$index]['quantity'] = D::add($line['quantity'], 1, 3);
                 $this->productSearch = '';
 
                 return;
@@ -93,7 +94,7 @@ class Index extends Component
             'discount_type' => ['required', Rule::in(['fixed', 'percentage'])],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:4000'], 'lines' => ['required', 'array', 'min:1'],
-            'lines.*.product_id' => ['required', 'exists:products,id'], 'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.product_id' => ['required', 'exists:products,id'], 'lines.*.quantity' => ['required', 'numeric', 'decimal:0,3', 'gt:0'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
         ]);
         $validated['expires_at'] = filled($validated['expires_at'] ?? null) ? $validated['expires_at'] : null;
@@ -152,15 +153,15 @@ class Index extends Component
 
     public function convert(int $id, QuotationService $service): mixed
     {
-        $invoice = $service->convertToSale(Quotation::query()->findOrFail($id), (float) ($this->amountPaid === '' ? 0 : $this->amountPaid));
+        $invoice = $service->convertToSale(Quotation::query()->findOrFail($id), D::scale($this->amountPaid));
         session()->flash('success', 'تم تحويل العرض إلى فاتورة مبيعات بعد التحقق من المخزون.');
 
         return $this->redirectRoute('invoices.sales.show', $invoice, navigate: true);
     }
 
-    public function getTotalProperty(): float
+    public function getTotalProperty(): string
     {
-        return (float) $this->pricing['total'];
+        return $this->pricing['total'];
     }
 
     public function getPricingProperty(): array
@@ -168,7 +169,7 @@ class Index extends Component
         try {
             return app(InvoicePricingService::class)->calculate($this->lines, $this->discount_type, $this->discount_value);
         } catch (\Throwable) {
-            $subtotal = round(collect($this->lines)->sum(fn ($line) => (int) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0)), 2);
+            $subtotal = D::sum(collect($this->lines)->map(fn ($line) => D::mul($line['quantity'] ?? 0, $line['unit_price'] ?? 0)));
 
             return ['subtotal' => $subtotal, 'discount_amount' => 0.0, 'total' => $subtotal];
         }

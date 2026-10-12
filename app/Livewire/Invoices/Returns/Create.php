@@ -4,6 +4,7 @@ namespace App\Livewire\Invoices\Returns;
 
 use App\Models\Invoice;
 use App\Services\ReturnService;
+use App\Support\Decimal as D;
 use Illuminate\Support\Str;
 use Livewire\Component;
 
@@ -52,9 +53,9 @@ class Create extends Component
         $this->validate([
             'amountPaid' => ['required', 'numeric', 'min:0'],
             'returnQuantities' => ['required', 'array'],
-            'returnQuantities.*' => ['integer', 'min:0'],
+            'returnQuantities.*' => ['numeric', 'decimal:0,3', 'min:0'],
         ]);
-        if ((float) ($this->amountPaid === '' ? 0 : $this->amountPaid) > $this->returnTotal) {
+        if (D::scale($this->amountPaid) > $this->returnTotal) {
             $this->addError('amountPaid', 'الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
 
             return;
@@ -76,7 +77,7 @@ class Create extends Component
         try {
             $returnInvoice = $returnService->processSalesReturn(
                 $this->invoice,
-                (float) ($this->amountPaid === '' ? 0 : $this->amountPaid),
+                D::scale($this->amountPaid),
                 $this->returnQuantities,
                 $this->requestKey
             );
@@ -90,12 +91,12 @@ class Create extends Component
 
     public function getReturnTotalProperty()
     {
-        $total = 0;
+        $total = '0.00';
         foreach ($this->lines as $line) {
-            $qty = (int) ($this->returnQuantities[$line['id']] ?? 0);
-            $currentQuantity = (int) $line['quantity'];
+            $qty = $this->returnQuantities[$line['id']] ?? 0;
+            $currentQuantity = $line['quantity'];
             $currentNet = $line['net_line_total'] ?? $line['line_total'];
-            $total += $currentQuantity > 0 ? round((float) $currentNet * $qty / $currentQuantity, 2) : 0;
+            $total = D::add($total, $currentQuantity > 0 ? D::div(D::of($currentNet)->multipliedBy($qty ?: 0), $currentQuantity) : 0);
         }
 
         return $total;

@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('invoice_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->nullable()->constrained()->nullOnDelete();
             $table->string('product_name');
-            $table->unsignedInteger('quantity');
+            $table->decimal('quantity', 14, 3);
             $table->decimal('unit_price', 14, 2);
             $table->decimal('purchase_price', 14, 4)->nullable();
             $table->decimal('sale_price', 14, 2)->nullable();

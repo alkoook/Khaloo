@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\LedgerSettlement;
 use App\Models\Product;
+use App\Support\Decimal as D;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,18 +18,18 @@ class ReturnService
      * The return invoice is an audit record only. Cash actually handed back is
      * stored as an outgoing settlement so the customer's net paid amount stays correct.
      */
-    public function processSalesReturn(Invoice $originalInvoice, float $refundAmount, array $returnQuantities, ?string $requestKey = null): Invoice
+    public function processSalesReturn(Invoice $originalInvoice, mixed $refundAmount, array $returnQuantities, ?string $requestKey = null): Invoice
     {
         if (! $originalInvoice->isSale()) {
             throw new Exception('يمكن إرجاع فواتير المبيعات فقط.');
         }
-        if (! is_finite($refundAmount) || $refundAmount < 0) {
+        if (D::cmp($refundAmount, 0) < 0) {
             throw new Exception('قيمة الاسترداد لا يمكن أن تكون سالبة.');
         }
         if ($requestKey !== null && ! Str::isUuid($requestKey)) {
             throw new Exception('طلب المرتجع غير صالح.');
         }
-        $refundAmount = round($refundAmount, 2);
+        $refundAmount = D::scale($refundAmount);
 
         [$invoice, $linesData, $replayed] = DB::transaction(function () use ($originalInvoice, $refundAmount, $returnQuantities, $requestKey): array {
             $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($originalInvoice->id);
@@ -46,54 +47,56 @@ class ReturnService
                 }
             }
             $lines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
-            $originalSubtotalBefore = (float) $lockedInvoice->subtotal > 0 ? (float) $lockedInvoice->subtotal : (float) $lines->sum('line_total');
+            $originalSubtotalBefore = D::cmp($lockedInvoice->subtotal, 0) > 0 ? $lockedInvoice->subtotal : D::sum($lines->pluck('line_total'));
             $items = [];
-            $subtotal = 0.0;
-            $total = 0.0;
+            $subtotal = '0.00';
+            $total = '0.00';
 
             foreach ($lines as $line) {
                 $rawQuantity = $returnQuantities[$line->id] ?? 0;
-                if (filter_var($rawQuantity, FILTER_VALIDATE_INT) === false) {
-                    throw new Exception('كمية المرتجع يجب أن تكون عددًا صحيحًا.');
+                try {
+                    $quantity = D::quantity($rawQuantity);
+                } catch (\Throwable) {
+                    throw new Exception('كمية المرتجع يجب أن تكون رقماً صالحاً حتى ثلاث منازل عشرية.');
                 }
-                $quantity = (int) $rawQuantity;
-                if ($quantity < 0) {
+                if (D::cmp($quantity, 0) < 0) {
                     throw new Exception('كمية المرتجع غير صالحة.');
                 }
-                if ($quantity > $line->quantity) {
+                if (D::cmp($quantity, $line->quantity) > 0) {
                     throw new Exception("الكمية المرتجعة من {$line->product_name} أكبر من الكمية المتبقية في الفاتورة.");
                 }
-                if ($quantity === 0) {
+                if (D::cmp($quantity, 0) === 0) {
                     continue;
                 }
-                $lineTotal = round($quantity * (float) $line->unit_price, 2);
-                $currentNet = $line->net_line_total === null ? (float) $line->line_total : (float) $line->net_line_total;
-                $netLineTotal = $quantity === (int) $line->quantity
-                    ? round($currentNet, 2)
-                    : round($currentNet * $quantity / (int) $line->quantity, 2);
-                $lineDiscount = round($lineTotal - $netLineTotal, 2);
+                $lineTotal = D::cmp($quantity, $line->quantity) === 0 ? $line->line_total
+                    : D::div(D::of($line->line_total)->multipliedBy($quantity), $line->quantity);
+                $currentNet = $line->net_line_total ?? $line->line_total;
+                $netLineTotal = D::cmp($quantity, $line->quantity) === 0
+                    ? D::scale($currentNet)
+                    : D::div(D::of($currentNet)->multipliedBy($quantity), $line->quantity);
+                $lineDiscount = D::sub($lineTotal, $netLineTotal);
                 $items[] = compact('line', 'quantity', 'lineTotal', 'lineDiscount', 'netLineTotal');
-                $subtotal += $lineTotal;
-                $total += $netLineTotal;
+                $subtotal = D::add($subtotal, $lineTotal);
+                $total = D::add($total, $netLineTotal);
             }
 
             if ($items === []) {
                 throw new Exception('حدد كمية لمنتج واحد على الأقل.');
             }
-            $subtotal = round($subtotal, 2);
-            $total = round($total, 2);
-            $discountAmount = round($subtotal - $total, 2);
-            if ($refundAmount > $total) {
+            $subtotal = D::scale($subtotal);
+            $total = D::scale($total);
+            $discountAmount = D::sub($subtotal, $total);
+            if (D::cmp($refundAmount, $total) > 0) {
                 throw new Exception('الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
             }
 
-            $debtBefore = max(0, round($lockedInvoice->collectibleTotal() - (float) $lockedInvoice->amount_paid, 2));
+            $debtBefore = D::max(0, D::sub($lockedInvoice->collectibleTotal(), $lockedInvoice->amount_paid));
             if ($lockedInvoice->partner_id) {
                 $partner = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($lockedInvoice->partner_id);
-                $debtBefore = max(0, round((float) $partner->sales_due - (float) $partner->incoming_total + (float) $partner->outgoing_total, 2));
+                $debtBefore = app(FinancialService::class)->receivable($partner);
             }
-            $maxRefund = max(0, round($total - $debtBefore, 2));
-            if ($refundAmount > $maxRefund) {
+            $maxRefund = D::max(0, D::sub($total, $debtBefore));
+            if (D::cmp($refundAmount, $maxRefund) > 0) {
                 throw new Exception('الاسترداد النقدي أكبر من المبلغ المستحق للعميل بعد تسوية الدين.');
             }
 
@@ -102,7 +105,7 @@ class ReturnService
                 'original_invoice_id' => $lockedInvoice->id,
                 'type' => Invoice::TYPE_RETURN,
                 'subtotal' => $subtotal,
-                'discount_type' => $discountAmount > 0 ? 'fixed' : null,
+                'discount_type' => D::cmp($discountAmount, 0) > 0 ? 'fixed' : null,
                 'discount_value' => $discountAmount,
                 'discount_amount' => $discountAmount,
                 'total' => $total,
@@ -131,34 +134,34 @@ class ReturnService
                     'discount_amount' => $lineDiscount,
                     'net_line_total' => $netLineTotal,
                 ]);
-                $product->increment('quantity', $quantity);
+                app(InventoryCostService::class)->restoreSaleStock($product, $quantity, $line->purchase_price);
                 $line->update([
-                    'quantity' => $line->quantity - $quantity,
-                    'line_total' => round((float) $line->line_total - $lineTotal, 2),
-                    'discount_amount' => round((float) $line->discount_amount - $lineDiscount, 2),
-                    'net_line_total' => round(($line->net_line_total === null ? (float) $line->line_total : (float) $line->net_line_total) - $netLineTotal, 2),
+                    'quantity' => D::sub($line->quantity, $quantity, 3),
+                    'line_total' => D::sub($line->line_total, $lineTotal),
+                    'discount_amount' => D::sub($line->discount_amount, $lineDiscount),
+                    'net_line_total' => D::sub($line->net_line_total ?? $line->line_total, $netLineTotal),
                 ]);
                 $notificationLines[] = [
                     'product_id' => $product->id,
                     'product_name' => $line->product_name,
                     'quantity' => $quantity,
-                    'unit_price' => (float) $line->unit_price,
+                    'unit_price' => $line->unit_price,
                     'line_total' => $netLineTotal,
                 ];
             }
 
-            $remainingDiscount = round((float) $lockedInvoice->discount_amount - $discountAmount, 2);
+            $remainingDiscount = D::sub($lockedInvoice->discount_amount, $discountAmount);
             $lockedInvoice->update([
-                'subtotal' => round($originalSubtotalBefore - $subtotal, 2),
+                'subtotal' => D::sub($originalSubtotalBefore, $subtotal),
                 'discount_amount' => $remainingDiscount,
                 'discount_value' => $lockedInvoice->discount_type === 'fixed' ? $remainingDiscount : $lockedInvoice->discount_value,
-                'total' => round((float) $lockedInvoice->total - $total, 2),
-                'payable_total' => round($lockedInvoice->collectibleTotal() - $total, 2),
+                'total' => D::sub($lockedInvoice->total, $total),
+                'payable_total' => D::sub($lockedInvoice->collectibleTotal(), $total),
             ]);
-            if ($refundAmount > 0 && $lockedInvoice->partner_id) {
+            if (D::cmp($refundAmount, 0) > 0 && $lockedInvoice->partner_id) {
                 LedgerSettlement::create([
                     'partner_id' => $lockedInvoice->partner_id,
-                    'amount' => round($refundAmount, 2),
+                    'amount' => D::scale($refundAmount),
                     'type' => LedgerSettlement::TYPE_OUTGOING,
                     'settlement_date' => now()->toDateString(),
                     'notes' => "استرداد نقدي لمرتجع فاتورة #{$lockedInvoice->id}",
@@ -177,7 +180,7 @@ class ReturnService
             $invoice->partner?->name ?? 'زبون',
             number_format((float) $invoice->total, 2),
             number_format($refundAmount, 2),
-            number_format((float) $invoice->total - $refundAmount, 2),
+            D::format(D::sub($invoice->total, $refundAmount)),
             (string) $invoice->id,
             $linesData,
         );

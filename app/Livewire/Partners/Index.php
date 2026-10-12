@@ -105,7 +105,7 @@ class Index extends Component
                 $templateProcessor->setValue('invoice_date', $invoice->created_at->format('Y-m-d'), 1);
                 $templateProcessor->setValue('invoice_total', number_format($partner->isCustomer() ? $invoice->collectibleTotal() : (float) $invoice->total, 2), 1);
                 $templateProcessor->setValue('invoice_paid', number_format((float) $invoice->initial_paid, 2), 1);
-                $templateProcessor->setValue('invoice_balance', number_format(($partner->isCustomer() ? $invoice->collectibleTotal() : (float) $invoice->total) - (float) $invoice->initial_paid, 2), 1);
+                $templateProcessor->setValue('invoice_balance', \App\Support\Decimal::format(\App\Support\Decimal::sub($partner->isCustomer() ? $invoice->collectibleTotal() : $invoice->total, $invoice->initial_paid)), 1);
 
                 // Handle Multiple Rows per Invoice using Row Cloning
                 // Matching user's template: ${l_products}, ${l_qtys}, ${l_prices}, ${l_totals}
@@ -115,7 +115,7 @@ class Index extends Component
                         'l_products' => $line->product_name ?? 'منتج',
                         'l_qtys' => (string) $line->quantity,
                         'l_prices' => number_format((float) $line->unit_price, 2),
-                        'l_totals' => number_format((float) ($line->quantity * $line->unit_price), 2),
+                        'l_totals' => \App\Support\Decimal::format($line->net_line_total ?? $line->line_total),
                     ];
                 }
 
@@ -187,7 +187,7 @@ class Index extends Component
                 }
 
                 $msg .= '     💵 المدفوع (وقت الفاتورة): '.number_format((float) $inv->initial_paid, 2)."\n";
-                $msg .= '     💰 الباقي (وقت الفاتورة): '.number_format(($partner->isCustomer() ? $inv->collectibleTotal() : (float) $inv->total) - (float) $inv->initial_paid, 2)."\n";
+                $msg .= '     💰 الباقي (وقت الفاتورة): '.\App\Support\Decimal::format(\App\Support\Decimal::sub($partner->isCustomer() ? $inv->collectibleTotal() : $inv->total, $inv->initial_paid))."\n";
                 $msg .= "------------------\n";
             }
         }

@@ -6,9 +6,9 @@
             <div class="card-heading"><div><h2>تكوين التقرير</h2><p>اختر نوع التقرير والفترة والفلاتر المناسبة ثم نزّل ملف إكسل منسقًا.</p></div><span class="xlsx-badge">إكسل</span></div>
             <div class="report-types">@foreach($types as $value=>$label)<button type="button" wire:click="$set('type','{{ $value }}')" class="{{ $type===$value?'active':'' }}"><span>{{ str_pad($loop->iteration,2,'0',STR_PAD_LEFT) }}</span>{{ $label }}</button>@endforeach</div>
             <div class="form-grid">
-                <label>من تاريخ<input type="date" wire:model.live="from"></label><label>إلى تاريخ<input type="date" wire:model.live="to"></label>
-                <label>الطرف<select wire:model.live="partner_id"><option value="">كل الأطراف</option>@foreach($partners as $partner)<option value="{{ $partner->id }}">{{ $partner->name }} — {{ $partner->type==='customer'?'عميل':'مورد' }}</option>@endforeach</select></label>
-                <label>التصنيف<select wire:model.live="category_id"><option value="">كل التصنيفات</option>@foreach($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></label>
+                <label>من تاريخ<input type="date" wire:model.live="from" @disabled(in_array($type, ['inventory', 'partners']))></label><label>إلى تاريخ<input type="date" wire:model.live="to" @disabled(in_array($type, ['inventory', 'partners']))></label>
+                <label>الطرف<select wire:model.live="partner_id" @disabled(in_array($type, ['inventory', 'expenses', 'notifications']))><option value="">كل الأطراف</option>@foreach($partners as $partner)<option value="{{ $partner->id }}">{{ $partner->name }} — {{ $partner->type==='customer'?'عميل':'مورد' }}</option>@endforeach</select></label>
+                <label>التصنيف<select wire:model.live="category_id" @disabled(in_array($type, ['partners', 'payments', 'expenses', 'notifications']))><option value="">كل التصنيفات</option>@foreach($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></label>
             </div>
             @error('to')<small class="field-error">{{ $message }}</small>@enderror
             <button type="button" class="primary-button export-button" wire:click="download" wire:loading.attr="disabled"><span>↓</span> إنشاء تقرير {{ $types[$type] }} في الخلفية</button>

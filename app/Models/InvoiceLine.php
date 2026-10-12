@@ -23,7 +23,7 @@ class InvoiceLine extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'integer',
+            'quantity' => 'decimal:3',
             'unit_price' => 'decimal:2',
             'purchase_price' => 'decimal:4',
             'sale_price' => 'decimal:2',

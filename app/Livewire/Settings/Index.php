@@ -50,6 +50,8 @@ class Index extends Component
 
     public string $receipt_width = '80';
 
+    public int $receipt_font_size = 12;
+
     public string $receipt_footer = 'شكراً لتعاملكم معنا';
 
     public string $telegram_bot_token = '';
@@ -71,6 +73,14 @@ class Index extends Component
     public bool $receipt_show_footer = true;
 
     public bool $receipt_auto_print = true;
+
+    public bool $receipt_auto_cut = true;
+
+    public string $receipt_printer_name = '';
+
+    public string $receipt_cut_mode = 'partial';
+
+    public int $receipt_cut_feed_lines = 3;
 
     public bool $telegram_enabled = false;
 
@@ -109,7 +119,7 @@ class Index extends Component
     public function mount(SettingsService $settings): void
     {
         abort_unless(auth()->user()?->is_admin, 403);
-        foreach (['site_name', 'company_name', 'company_description', 'company_phone', 'company_phone_secondary', 'invoice_phone_display', 'company_whatsapp', 'company_email', 'company_address', 'currency', 'currency_symbol', 'timezone', 'language', 'theme', 'font_family', 'receipt_width', 'receipt_show_logo', 'receipt_show_company', 'receipt_show_phone', 'receipt_show_address', 'receipt_show_partner', 'receipt_show_number', 'receipt_show_footer', 'receipt_auto_print', 'receipt_footer', 'telegram_enabled', 'telegram_chat_id', 'telegram_sales', 'telegram_purchases', 'telegram_payments', 'telegram_alerts', 'notify_stock_low', 'notify_stock_zero', 'notify_receivable', 'notify_payable', 'receivable_alert_threshold', 'payable_alert_threshold'] as $key) {
+        foreach (['site_name', 'company_name', 'company_description', 'company_phone', 'company_phone_secondary', 'invoice_phone_display', 'company_whatsapp', 'company_email', 'company_address', 'currency', 'currency_symbol', 'timezone', 'language', 'theme', 'font_family', 'receipt_width', 'receipt_font_size', 'receipt_show_logo', 'receipt_show_company', 'receipt_show_phone', 'receipt_show_address', 'receipt_show_partner', 'receipt_show_number', 'receipt_show_footer', 'receipt_auto_print', 'receipt_auto_cut', 'receipt_printer_name', 'receipt_cut_mode', 'receipt_cut_feed_lines', 'receipt_footer', 'telegram_enabled', 'telegram_chat_id', 'telegram_sales', 'telegram_purchases', 'telegram_payments', 'telegram_alerts', 'notify_stock_low', 'notify_stock_zero', 'notify_receivable', 'notify_payable', 'receivable_alert_threshold', 'payable_alert_threshold'] as $key) {
             $value = $settings->get($key, $this->{$key});
             if ($value !== null) {
                 $this->{$key} = $value;
@@ -123,6 +133,9 @@ class Index extends Component
         }
         if (! in_array((string) $this->receipt_width, ['72', '80'], true)) {
             $this->receipt_width = '80';
+        }
+        if ($this->receipt_font_size < 10 || $this->receipt_font_size > 16) {
+            $this->receipt_font_size = 12;
         }
         if (! in_array($this->invoice_phone_display, ['primary', 'secondary', 'both'], true)) {
             $this->invoice_phone_display = 'primary';
@@ -152,7 +165,7 @@ class Index extends Component
 
     public function savePrinting(SettingsService $settings): void
     {
-        $data = $this->validate(['receipt_width' => ['required', 'in:72,80'], 'invoice_phone_display' => ['required', 'in:primary,secondary,both'], 'receipt_show_logo' => ['boolean'], 'receipt_show_company' => ['boolean'], 'receipt_show_phone' => ['boolean'], 'receipt_show_address' => ['boolean'], 'receipt_show_partner' => ['boolean'], 'receipt_show_number' => ['boolean'], 'receipt_show_footer' => ['boolean'], 'receipt_auto_print' => ['boolean'], 'receipt_footer' => ['nullable', 'string', 'max:300']]);
+        $data = $this->validate(['receipt_width' => ['required', 'in:72,80'], 'receipt_font_size' => ['required', 'integer', 'min:10', 'max:16'], 'invoice_phone_display' => ['required', 'in:primary,secondary,both'], 'receipt_show_logo' => ['boolean'], 'receipt_show_company' => ['boolean'], 'receipt_show_phone' => ['boolean'], 'receipt_show_address' => ['boolean'], 'receipt_show_partner' => ['boolean'], 'receipt_show_number' => ['boolean'], 'receipt_show_footer' => ['boolean'], 'receipt_auto_print' => ['boolean'], 'receipt_auto_cut' => ['boolean'], 'receipt_printer_name' => ['nullable', 'string', 'max:255'], 'receipt_cut_mode' => ['required', 'in:full,partial'], 'receipt_cut_feed_lines' => ['required', 'integer', 'min:1', 'max:10'], 'receipt_footer' => ['nullable', 'string', 'max:300']]);
         $settings->setMany($data, 'printing');
         $this->saved();
     }

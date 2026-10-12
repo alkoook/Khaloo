@@ -75,3 +75,35 @@ window.captureReceipt = async (button) => {
         }
     }
 };
+
+const sentCutTokens = new Set();
+
+window.requestReceiptCut = async (printToken) => {
+    const { autoCut, cutUrl } = document.body.dataset;
+
+    if (autoCut !== '1' || ! cutUrl || ! printToken || sentCutTokens.has(printToken)) {
+        return;
+    }
+
+    sentCutTokens.add(printToken);
+
+    try {
+        const response = await fetch(cutUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            },
+            body: JSON.stringify({ print_token: printToken }),
+        });
+
+        if (! response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.message || 'Receipt cut request failed.');
+        }
+    } catch (error) {
+        console.error('Receipt cutter failed.', error);
+    }
+};

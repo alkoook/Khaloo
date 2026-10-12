@@ -39,8 +39,8 @@ test('later settlement and partial return produce one authoritative receivable',
     LedgerSettlement::create(['partner_id' => $partner->id, 'amount' => 30, 'type' => LedgerSettlement::TYPE_INCOMING, 'settlement_date' => now()]);
     app(ReturnService::class)->processSalesReturn($invoice, 0, [$line->id => 2]);
     $balancePartner = app(FinancialService::class)->partnerBalancesQuery()->find($partner->id);
-    expect(app(FinancialService::class)->receivable($balancePartner))->toBe(30.0)
-        ->and($product->fresh()->quantity)->toBe(2)
+    expect(app(FinancialService::class)->receivable($balancePartner))->toBe('30.00')
+        ->and($product->fresh()->quantity)->toBe('2.000')
         ->and((float) $invoice->fresh()->total)->toBe(80.0);
 });
 
@@ -59,7 +59,7 @@ test('purchase deletion is blocked when stock was already consumed', function ()
     $invoice = Invoice::create(['partner_id' => $supplier->id, 'type' => Invoice::TYPE_PURCHASE, 'total' => 50]);
     InvoiceLine::create(['invoice_id' => $invoice->id, 'product_id' => $product->id, 'product_name' => 'منتج', 'quantity' => 5, 'unit_price' => 10, 'line_total' => 50]);
     Livewire::actingAs($user)->test(PurchaseIndex::class)->call('openCancellation', $invoice->id)->set('cancellationReason', 'إلغاء اختباري')->call('cancel')->assertHasErrors('cancellationReason');
-    expect($invoice->fresh())->not->toBeNull()->and($product->fresh()->quantity)->toBe(3);
+    expect($invoice->fresh())->not->toBeNull()->and($product->fresh()->quantity)->toBe('3.000');
 });
 
 test('admin can open settings and pos receipt', function () {
@@ -91,6 +91,26 @@ test('pos receipt uses the persisted interface font with a safe fallback', funct
     ['invoice' => $invoice] = saleFixture();
     Setting::query()->updateOrCreate(['key' => 'font_family'], ['value' => 'reem-kufi', 'type' => 'string', 'group' => 'appearance']);
     $this->actingAs($user)->get(route('invoices.receipt', $invoice))->assertOk()->assertSee('--receipt-font: "Reem Kufi", Tahoma, Arial, sans-serif', false);
+});
+
+test('receipt font size persists and scales the same preview and print stylesheet', function () {
+    $user = User::factory()->create(['is_admin' => true]);
+    ['invoice' => $invoice] = saleFixture();
+
+    Livewire::actingAs($user)->test(SettingsIndex::class)
+        ->set('receipt_font_size', 15)
+        ->call('savePrinting')
+        ->assertHasNoErrors();
+
+    expect(Setting::query()->where('key', 'receipt_font_size')->value('value'))->toBe('15');
+
+    $this->actingAs($user)->get(route('invoices.receipt', $invoice))
+        ->assertOk()
+        ->assertSee('--receipt-font-scale: 1.25', false);
+
+    $styles = file_get_contents(resource_path('css/receipt.css'));
+    expect($styles)->toContain('var(--receipt-font-scale, 1)')
+        ->and($styles)->toContain('white-space: nowrap !important;');
 });
 
 test('receipt width accepts only 72mm or 80mm and renders the selected print width', function () {
@@ -134,6 +154,38 @@ test('thermal receipt renders dynamic company facts and the invoice number fallb
         ->assertDontSee('0991234567')
         ->assertSee('#'.$invoice->id)
         ->assertSee($invoice->created_at->format('Y-m-d H:i'));
+});
+
+test('thermal roll renders long invoices as one continuously numbered table', function () {
+    $user = User::factory()->create(['is_admin' => true]);
+    ['invoice' => $invoice] = saleFixture();
+
+    foreach (range(2, 15) as $number) {
+        InvoiceLine::query()->create([
+            'invoice_id' => $invoice->id,
+            'product_name' => 'صنف متسلسل '.$number,
+            'quantity' => 1,
+            'unit_price' => 1,
+            'line_total' => 1,
+            'net_line_total' => 1,
+        ]);
+    }
+
+    $content = $this->actingAs($user)->get(route('invoices.receipt', $invoice))
+        ->assertOk()
+        ->getContent();
+
+    expect(substr_count($content, '<table>'))->toBe(1)
+        ->and(substr_count($content, '<thead>'))->toBe(1)
+        ->and($content)->toContain('class="receipt-sequence">13</td>')
+        ->and($content)->toContain('class="receipt-sequence">15</td>');
+
+    $styles = file_get_contents(resource_path('css/receipt.css'));
+    expect($styles)->toContain('display: table-row-group !important;')
+        ->and($styles)->not->toContain('page-break-')
+        ->and($styles)->not->toContain('break-before:')
+        ->and($styles)->not->toContain('break-after:')
+        ->and($styles)->not->toContain('break-inside:');
 });
 
 test('invoice product selection clears search and keeps the keyboard focus event for sales and purchases', function () {

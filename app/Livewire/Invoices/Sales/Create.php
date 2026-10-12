@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Services\AlertService;
 use App\Services\InvoicePricingService;
 use App\Services\TelegramService;
+use App\Support\Decimal as D;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
@@ -38,6 +39,11 @@ class Create extends Component
     public function selectProduct(int $id): void
     {
         $product = Product::query()->findOrFail($id);
+        if (D::cmp($product->quantity, 0) <= 0) {
+            $this->addError('lines', "لا يمكن إضافة «{$product->name}» لأن مخزونه نافد.");
+
+            return;
+        }
         if ($product->purchase_price === null) {
             $this->addError('lines', "لا يمكن بيع «{$product->name}» قبل تسجيل تكلفة شراء موثوقة له.");
 
@@ -45,13 +51,18 @@ class Create extends Component
         }
         foreach ($this->lines as $index => $line) {
             if ((int) $line['product_id'] === $id) {
-                $this->lines[$index]['quantity']++;
+                if (D::cmp(D::add($line['quantity'], 1, 3), $product->quantity) > 0) {
+                    $this->addError('lines', "لا يمكن إضافة كمية أخرى من «{$product->name}» لأن المتوفر {$product->quantity} فقط.");
+
+                    return;
+                }
+                $this->lines[$index]['quantity'] = D::add($line['quantity'], 1, 3);
                 $this->afterLinesChanged();
 
                 return;
             }
         }
-        $this->lines[] = ['product_id' => $id, 'product_name' => $product->name ?: "منتج #{$id}", 'available' => $product->quantity, 'quantity' => 1, 'unit_price' => (float) $product->sale_price];
+        $this->lines[] = ['product_id' => $id, 'product_name' => $product->name ?: "منتج #{$id}", 'available' => $product->quantity, 'quantity' => D::min(1, $product->quantity), 'unit_price' => $product->sale_price];
         $this->afterLinesChanged();
     }
 
@@ -98,26 +109,24 @@ class Create extends Component
         }
     }
 
-    public function getSubtotalProperty(): float
+    public function getSubtotalProperty(): string
     {
-        return round((float) collect($this->lines)->sum(fn ($line) => (int) ($line['quantity'] ?? 0) * (float) ($line['unit_price'] ?? 0)), 2);
+        return D::sum(collect($this->lines)->map(fn ($line) => D::mul($line['quantity'] ?? 0, $line['unit_price'] ?? 0)));
     }
 
-    public function getTotalProperty(): float
+    public function getTotalProperty(): string
     {
-        return (float) $this->pricing['total'];
+        return $this->pricing['total'];
     }
 
-    public function getAdditionalTotalProperty(): float
+    public function getAdditionalTotalProperty(): string
     {
-        return round((float) collect($this->additionalLines)->sum(
-            fn (array $line): float => (float) ($line['quantity'] ?? 0) * (float) ($line['unit_amount'] ?? 0)
-        ), 2);
+        return D::sum(collect($this->additionalLines)->map(fn ($line) => D::mul($line['quantity'] ?? 0, $line['unit_amount'] ?? 0)));
     }
 
-    public function getCustomerTotalProperty(): float
+    public function getCustomerTotalProperty(): string
     {
-        return round($this->total + ($this->hasDelivery ? (float) ($this->deliveryAmount ?: 0) : 0) + $this->additionalTotal, 2);
+        return D::sum([$this->total, $this->hasDelivery ? $this->deliveryAmount : 0, $this->additionalTotal]);
     }
 
     public function save(): mixed
@@ -129,13 +138,13 @@ class Create extends Component
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'exists:products,id'],
-            'lines.*.quantity' => ['required', 'integer', 'min:1'],
+            'lines.*.quantity' => ['required', 'numeric', 'decimal:0,3', 'gt:0'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
             'hasDelivery' => ['boolean'],
             'deliveryAmount' => ['nullable', 'numeric', 'min:0', 'required_if:hasDelivery,true'],
             'additionalLines' => ['array'],
             'additionalLines.*.description' => ['required', 'string', 'max:255'],
-            'additionalLines.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'additionalLines.*.quantity' => ['required', 'numeric', 'decimal:0,3', 'gt:0'],
             'additionalLines.*.unit_amount' => ['required', 'numeric', 'min:0'],
             'additionalLines.*.source_note' => ['nullable', 'string', 'max:255'],
         ]);
@@ -146,21 +155,21 @@ class Create extends Component
         }
 
         $pricing = app(InvoicePricingService::class)->calculate($this->lines, $this->discount_type, $this->discount_value);
-        $paid = round((float) ($this->amount_paid === '' ? 0 : $this->amount_paid), 2);
-        if ($pricing['total'] <= 0) {
+        $paid = D::scale($this->amount_paid);
+        if (D::cmp($pricing['total'], 0) <= 0) {
             $this->addError('lines', 'يجب أن يكون الإجمالي بعد الحسم أكبر من صفر.');
 
             return null;
         }
-        $deliveryAmount = $this->hasDelivery ? round((float) ($this->deliveryAmount ?: 0), 2) : 0.0;
+        $deliveryAmount = $this->hasDelivery ? D::scale($this->deliveryAmount) : '0.00';
         $additionalTotal = $this->additionalTotal;
-        $customerTotal = round((float) $pricing['total'] + $deliveryAmount + $additionalTotal, 2);
-        if ($paid > $customerTotal) {
+        $customerTotal = D::sum([$pricing['total'], $deliveryAmount, $additionalTotal]);
+        if (D::cmp($paid, $customerTotal) > 0) {
             $this->addError('amount_paid', 'المدفوع لا يمكن أن يتجاوز الإجمالي بعد الحسم.');
 
             return null;
         }
-        if (! $this->partner_id && $paid < $customerTotal) {
+        if (! $this->partner_id && D::cmp($paid, $customerTotal) < 0) {
             $this->addError('partner_id', 'يجب اختيار عميل عند وجود مبلغ متبقٍ.');
 
             return null;
@@ -180,8 +189,8 @@ class Create extends Component
                 $messageLines = [];
                 foreach ($pricing['lines'] as $line) {
                     $product = $products->get((int) $line['product_id']);
-                    $quantity = (int) $line['quantity'];
-                    if (! $product || $product->quantity < $quantity) {
+                    $quantity = D::quantity($line['quantity']);
+                    if (! $product || D::cmp($product->quantity, $quantity) < 0) {
                         throw new \RuntimeException("المخزون غير كافٍ للمنتج {$line['product_name']}.");
                     }
                     if ($product->purchase_price === null) {
@@ -193,17 +202,17 @@ class Create extends Component
                         'sale_price' => $line['unit_price'], 'line_total' => $line['line_total'],
                         'discount_amount' => $line['discount_amount'], 'net_line_total' => $line['net_line_total'],
                     ]);
-                    $product->decrement('quantity', $quantity);
+                    $product->update(['quantity' => D::sub($product->quantity, $quantity, 3)]);
                     $messageLines[] = ['product_name' => $product->name, 'quantity' => $quantity, 'unit_price' => $line['unit_price'], 'line_total' => $line['net_line_total']];
                 }
                 foreach ($this->additionalLines as $line) {
-                    $quantity = round((float) $line['quantity'], 3);
-                    $unitAmount = round((float) $line['unit_amount'], 2);
+                    $quantity = D::quantity($line['quantity']);
+                    $unitAmount = D::scale($line['unit_amount']);
                     $invoice->additionalLines()->create([
                         'description' => trim($line['description']),
                         'quantity' => $quantity,
                         'unit_amount' => $unitAmount,
-                        'row_total' => round($quantity * $unitAmount, 2),
+                        'row_total' => D::mul($quantity, $unitAmount),
                         'source_note' => filled($line['source_note'] ?? null) ? trim($line['source_note']) : null,
                     ]);
                 }
@@ -220,7 +229,7 @@ class Create extends Component
         if ($invoice->partner_id) {
             app(AlertService::class)->evaluatePartners($invoice->partner_id);
         }
-        app(TelegramService::class)->sendInvoiceNotification('sale', $invoice->partner?->name ?? 'عميل نقدي', number_format($customerTotal, 2), number_format($paid, 2), number_format($customerTotal - $paid, 2), (string) $invoice->id, $messageLines);
+        app(TelegramService::class)->sendInvoiceNotification('sale', $invoice->partner?->name ?? 'عميل نقدي', number_format($customerTotal, 2), number_format($paid, 2), D::format(D::sub($customerTotal, $paid)), (string) $invoice->id, $messageLines);
         session()->flash('success', 'تم إنشاء فاتورة البيع بنجاح.');
 
         return $this->redirectRoute('invoices.sales.show', $invoice, navigate: true);
@@ -236,7 +245,7 @@ class Create extends Component
     private function syncPaidPrefill(): void
     {
         if (! $this->amountPaidTouched) {
-            $this->amount_paid = $this->customerTotal > 0 ? number_format($this->customerTotal, 2, '.', '') : '';
+            $this->amount_paid = $this->customerTotal > 0 ? D::scale($this->customerTotal) : '';
         }
     }
 

@@ -42,11 +42,11 @@ test('sale cancellation preserves identity and lines and reverses stock exactly 
         ->and($invoice->cancelled_at)->not->toBeNull()
         ->and(Invoice::query()->find($invoice->id))->not->toBeNull()
         ->and(InvoiceLine::query()->find($line->id))->not->toBeNull()
-        ->and($product->fresh()->quantity)->toBe(10);
+        ->and($product->fresh()->quantity)->toBe('10.000');
 
     expect(fn () => app(InvoiceCancellationService::class)->cancel($invoice, $user->id, 'محاولة إلغاء ثانية'))
         ->toThrow(ValidationException::class);
-    expect($product->fresh()->quantity)->toBe(10);
+    expect($product->fresh()->quantity)->toBe('10.000');
 });
 
 test('cancelled sale is excluded from receivables financial totals and active reports', function () {
@@ -57,10 +57,10 @@ test('cancelled sale is excluded from receivables financial totals and active re
     $balance = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($partner->id);
     $summary = app(FinancialStatusService::class)->summary();
     $report = app(ReportService::class)->preview('sales', []);
-    expect(app(FinancialService::class)->receivable($balance))->toBe(0.0)
-        ->and($summary['net_sales'])->toBe(0.0)
+    expect(app(FinancialService::class)->receivable($balance))->toBe('0.00')
+        ->and($summary['net_sales'])->toBe('0.00')
         ->and($report['count'])->toBe(0)
-        ->and($report['total'])->toBe(0.0)
+        ->and($report['total'])->toBe('0.00')
         ->and(Invoice::query()->active()->count())->toBe(0);
 
     $this->actingAs($user)->get(route('invoices.sales.show', $invoice))
@@ -75,7 +75,7 @@ test('purchase cancellation preserves the invoice and reverses stock and cost', 
 
     expect($invoice->fresh()->isCancelled())->toBeTrue()
         ->and(InvoiceLine::query()->find($line->id))->not->toBeNull()
-        ->and($product->fresh()->quantity)->toBe(0)
+        ->and($product->fresh()->quantity)->toBe('0.000')
         ->and($product->fresh()->purchase_price)->toBeNull()
-        ->and(app(FinancialStatusService::class)->summary()['purchases'])->toBe(0.0);
+        ->and(app(FinancialStatusService::class)->summary()['purchases'])->toBe('0.00');
 });

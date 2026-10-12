@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Decimal as D;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -114,21 +115,21 @@ class Invoice extends Model
         return $this->status === self::STATUS_CANCELLED;
     }
 
-    public function getBalanceAttribute(): float
+    public function getBalanceAttribute(): string
     {
-        return $this->collectibleTotal() - (float) $this->amount_paid;
+        return D::sub($this->collectibleTotal(), $this->amount_paid);
     }
 
-    public function collectibleTotal(): float
+    public function collectibleTotal(): string
     {
         return $this->isSale() && $this->payable_total !== null
-            ? (float) $this->payable_total
-            : (float) $this->total;
+            ? (string) $this->payable_total
+            : (string) $this->total;
     }
 
-    public function getRemainingAttribute(): float
+    public function getRemainingAttribute(): string
     {
-        return max(0, round($this->balance, 2));
+        return D::scale(D::max(0, $this->balance));
     }
 
     public function isSale(): bool
