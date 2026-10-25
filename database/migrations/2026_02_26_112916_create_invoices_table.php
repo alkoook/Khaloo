@@ -28,6 +28,7 @@ return new class extends Migration
             $table->decimal('initial_paid', 14, 2)->default(0);
             $table->decimal('amount_paid', 14, 2)->default(0);
             $table->uuid('return_request_key')->nullable()->unique();
+            $table->boolean('return_preserves_original')->default(false)->index();
             $table->timestamp('cancelled_at')->nullable();
             $table->foreignId('cancelled_by')->nullable()->constrained('users')->nullOnDelete();
             $table->text('cancellation_reason')->nullable();

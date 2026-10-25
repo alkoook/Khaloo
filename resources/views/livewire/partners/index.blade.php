@@ -1,12 +1,12 @@
 <div class="rounded-xl overflow-hidden card-puff" style="background: var(--app-card); border: 1px solid var(--app-border);">
     <div class="p-4 flex flex-wrap items-center justify-between gap-4" style="border-bottom: 1px solid var(--app-border);">
-        <h2 class="text-xl font-semibold" style="color: var(--app-primary);">الزبائن والموردين</h2>
+        <h2 class="text-xl font-semibold" style="color: var(--app-primary);">السادة والموردين</h2>
         <div class="flex flex-wrap items-center gap-2">
             <input type="text" wire:model.live.debounce.300ms="search" placeholder="بحث بالاسم..."
                 class="rounded-lg px-3 py-2 text-sm w-40" style="background: var(--app-bg); border: 1px solid var(--app-border); color: var(--app-text);">
             <select wire:model.live="typeFilter" class="rounded-lg px-3 py-2 text-sm w-40" style="background: var(--app-bg); border: 1px solid var(--app-border); color: var(--app-text);">
                 <option value="">الكل</option>
-                <option value="customer">زبون</option>
+                <option value="customer">السيد</option>
                 <option value="supplier">مورد</option>
             </select>
             <a href="{{ route('partners.create') }}" class="px-4 py-2 rounded-lg text-sm font-medium text-white" style="background: var(--app-primary);">إضافة</a>
@@ -26,7 +26,7 @@
                 @forelse($partners as $partner)
                     <tr wire:key="partner-{{ $partner->id }}" style="border-top: 1px solid var(--app-border);">
                         <td class="px-4 py-3">{{ $partner->name ?? '—' }}</td>
-                        <td class="px-4 py-3">{{ $partner->type === 'customer' ? 'زبون' : 'مورد' }}</td>
+                        <td class="px-4 py-3">{{ $partner->type === 'customer' ? 'السيد' : 'مورد' }}</td>
                         <td class="px-4 py-3">{{ $partner->national_id ?? '—' }}</td>
                         <td class="px-4 py-3">
                             <div class="flex items-center gap-1">
@@ -44,7 +44,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-4 py-8 text-center" style="color: var(--app-muted);">لا يوجد زبائن أو موردين.</td>
+                        <td colspan="4" class="px-4 py-8 text-center" style="color: var(--app-muted);">لا يوجد سادة أو موردون.</td>
                     </tr>
                 @endforelse
             </tbody>

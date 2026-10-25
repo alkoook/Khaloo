@@ -21,10 +21,8 @@ class InvoiceCancellationService
         if (! in_array($invoice->type, [Invoice::TYPE_SALE, Invoice::TYPE_PURCHASE], true)) {
             return 'لا يمكن إلغاء هذا النوع من المستندات من هنا.';
         }
-        if ($invoice->partner_id && LedgerSettlement::query()
-            ->where('partner_id', $invoice->partner_id)
-            ->whereDate('settlement_date', '>=', $invoice->created_at->toDateString())->exists()) {
-            return 'لا يمكن إلغاء الفاتورة بعد تسجيل تسوية لاحقة للطرف.';
+        if (LedgerSettlement::query()->where('invoice_id', $invoice->id)->exists()) {
+            return 'لا يمكن إلغاء الفاتورة قبل إلغاء الدفعات المرتبطة بها؛ الدفعات الأخرى للطرف لا تمنع الإلغاء.';
         }
         if ($invoice->isSale()) {
             return $invoice->returns()->active()->exists()

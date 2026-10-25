@@ -21,7 +21,7 @@ class ReportService
 {
     public const TYPES = [
         'sales' => 'المبيعات', 'purchases' => 'المشتريات', 'inventory' => 'المخزون',
-        'partners' => 'العملاء والموردون', 'payments' => 'الدفعات', 'returns' => 'المرتجعات',
+        'partners' => 'السادة والموردون', 'payments' => 'الدفعات', 'returns' => 'المرتجعات',
         'expenses' => 'المصاريف', 'profit' => 'الأرباح', 'quotations' => 'عروض الأسعار',
         'notifications' => 'التنبيهات', 'master' => 'التقرير الشامل',
     ];
@@ -93,7 +93,7 @@ class ReportService
         }
         if ($id = ($filters['partner_id'] ?? null)) {
             $partner = Partner::query()->find($id);
-            $labels[$partner?->isSupplier() ? 'المورد' : 'العميل'] = $partner?->name ?? 'غير محدد';
+            $labels[$partner?->isSupplier() ? 'المورد' : 'السيد'] = $partner?->name ?? 'غير محدد';
         }
         if ($id = ($filters['category_id'] ?? null)) {
             $labels['التصنيف'] = Category::query()->find($id)?->name ?? 'غير محدد';
@@ -155,28 +155,24 @@ class ReportService
         return $path;
     }
 
-    public function statement(Partner $partner, ?string $from = null, ?string $to = null): string
+    public function statement(Partner $partner, ?string $from = null, ?string $to = null, ?string $movementType = null): string
     {
-        $movements = app(FinancialService::class)->statementRows($partner, $from, $to);
-        $openingPartner = $from ? app(FinancialService::class)->partnerBalancesQuery(null, null, now()->parse($from)->subDay()->toDateString())->find($partner->id) : null;
-        $opening = $openingPartner ? app(FinancialService::class)->signedBalance($openingPartner) : '0.00';
-        $rows = $movements->map(fn ($row) => [$row['date']->format('Y-m-d'), $row['reference'], $row['type'].' — '.$row['description'], $row['charge'], $row['payment'], $row['balance']])->all();
-        if ($from) {
-            array_unshift($rows, ['', '', 'الرصيد الافتتاحي', '', '', $opening]);
-        }
-        $closing = app(FinancialService::class)->partnerBalancesQuery(null, null, $to)->find($partner->id);
-        $rows[] = ['', '', 'الرصيد الختامي المعتمد', '', '', $closing ? app(FinancialService::class)->signedBalance($closing) : 0.0];
+        $statement = app(FinancialService::class)->statementData($partner, $from, $to, $movementType);
+        $rows = $statement['rows']->map(fn ($row) => [$row['date']->format('Y-m-d'), $row['type'], $row['reference'], $row['description'], $row['charge'], $row['payment'], $row['balance']])->all();
+        array_unshift($rows, ['', '', '', 'الرصيد الافتتاحي', '', '', $statement['opening']]);
+        $rows[] = ['', '', '', 'إجمالي الفترة', $statement['debit_total'], $statement['credit_total'], $statement['closing']];
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('كشف الحساب');
         $sheet->setRightToLeft(true);
-        $title = 'كشف حساب '.($partner->isCustomer() ? 'العميل ' : 'المورد ').$partner->name.' من '.($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم');
-        $sheet->setCellValue('A1', $title)->mergeCells('A1:F1');
-        $sheet->fromArray(['التاريخ', 'المرجع', 'البيان', 'قيمة الحركة', 'المدفوع/المستلم', 'الرصيد'], null, 'A3');
+        $title = 'كشف حساب '.($partner->isCustomer() ? 'السيد ' : 'المورد ').$partner->name.' من '.($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم');
+        $sheet->setCellValue('A1', $title)->mergeCells('A1:G1');
+        $sheet->setCellValue('A2', 'الهاتف: '.($partner->phone ?: 'غير مسجل'))->mergeCells('A2:G2');
+        $sheet->fromArray(['التاريخ', 'نوع الحركة', 'المستند/المرجع', 'البيان', 'مدين', 'دائن', 'الرصيد'], null, 'A3');
         if ($rows) {
             $sheet->fromArray($rows, null, 'A4');
         }
-        $this->style($sheet, 6, count($rows) + 3, 3);
+        $this->style($sheet, 7, count($rows) + 3, 3);
         $path = $this->path($title.'-'.now()->format('Ymd-His-u').'.xlsx');
         (new Xlsx($spreadsheet))->save($path);
         $spreadsheet->disconnectWorksheets();
@@ -186,13 +182,14 @@ class ReportService
 
     public function statementMessage(Partner $partner, ?string $from = null, ?string $to = null): string
     {
-        $rows = app(FinancialService::class)->statementRows($partner, $from, $to);
-        $summary = app(FinancialService::class)->partnerSummary($partner);
-        $text = "📑 كشف حساب\nالطرف: {$partner->name}\nالنوع: ".($partner->isCustomer() ? 'عميل' : 'مورد')
+        $statement = app(FinancialService::class)->statementData($partner, $from, $to);
+        $rows = $statement['rows'];
+        $text = "📑 كشف حساب\nالطرف: {$partner->name}\nالنوع: ".($partner->isCustomer() ? 'السيد' : 'مورد')
             ."\nالفترة: ".($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم')
-            ."\nإجمالي الفواتير المتبقي: ".number_format($summary['invoiced'], 2)
-            ."\nإجمالي الدفعات اللاحقة: ".number_format($summary['paid'], 2)
-            ."\nالرصيد النهائي: ".number_format($summary['signed'], 2)."\n──────────\nآخر الحركات:";
+            ."\nالرصيد الافتتاحي: ".number_format($statement['opening'], 2)
+            ."\nإجمالي المدين: ".number_format($statement['debit_total'], 2)
+            ."\nإجمالي الدائن: ".number_format($statement['credit_total'], 2)
+            ."\nالرصيد الختامي: ".number_format($statement['closing'], 2)."\n──────────\nآخر الحركات:";
         foreach ($rows->sortByDesc('date')->take(12) as $row) {
             $amount = D::cmp($row['charge'], 0) !== 0 ? $row['charge'] : $row['payment'];
             $text .= "\n• ".$row['date']->format('Y-m-d').' — '.$row['type'].' '.$row['reference'].' — '.number_format($amount, 2).' — الرصيد '.number_format($row['balance'], 2);
@@ -216,22 +213,22 @@ class ReportService
             'sales' => (function () use ($from, $to, $partner, $category) {
                 $events = app(SalesAccountingService::class)->activity($from, $to, $partner ? (int) $partner : null, $category ? (int) $category : null);
 
-                return [['رقم الفاتورة', 'نوع الحركة', 'التاريخ', 'الوقت', 'العميل', 'الهاتف', 'عدد الأصناف', 'إجمالي الكميات', 'المجموع قبل الحسم', 'نوع الحسم', 'قيمة الحسم', 'صافي البضاعة', 'المدفوع عند الإنشاء', 'المدفوع المسجل', 'المتبقي الحالي', 'حالة الدفع الحالية', 'الفاتورة الأصلية', 'التوصيل', 'الخانات الإضافية'], $events->map(function ($event) {
+                return [['رقم الفاتورة', 'نوع الحركة', 'التاريخ', 'الوقت', 'السيد', 'الهاتف', 'عدد الأصناف', 'إجمالي الكميات', 'المجموع قبل الحسم', 'نوع الحسم', 'قيمة الحسم', 'صافي البضاعة', 'المدفوع عند الإنشاء', 'المدفوع المسجل', 'المتبقي الحالي', 'حالة الدفع الحالية', 'الفاتورة الأصلية', 'التوصيل', 'الخانات الإضافية'], $events->map(function ($event) {
                     $i = $event['invoice'];
 
                     return [$i->id, $i->isReturn() ? 'مرتجع' : 'بيع', $event['date']->format('Y-m-d'), $event['date']->format('H:i'),
                         $i->partner?->name ?: 'نقدي', $i->partner?->phone, $event['line_count'], $event['quantity'],
                         $event['subtotal'], $i->discount_type === 'percentage' ? 'نسبة مئوية' : (D::cmp($event['discount'], 0) !== 0 ? 'مبلغ ثابت' : 'بدون حسم'), $event['discount'],
-                        $event['merchandise'], $i->initial_paid, $i->amount_paid, $i->remaining,
+                        $event['merchandise'], $i->initial_paid, $i->effective_paid, $i->remaining,
                         $i->remaining <= 0 ? 'مدفوعة بالكامل' : 'متبقي', $i->original_invoice_id, $event['delivery'], $i->isSale() ? $i->additional_total : '0.00'];
                 })->all()];
             })(),
             'purchases', 'returns' => (function () use ($type, $partner, $category, $date) {
                 $invoiceType = ['sales' => Invoice::TYPE_SALE, 'purchases' => Invoice::TYPE_PURCHASE, 'returns' => Invoice::TYPE_RETURN][$type];
-                $q = Invoice::query()->active()->with('partner')->withCount('lines')->where('type', $invoiceType)->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)));
+                $q = Invoice::query()->active()->with('partner', 'settlements')->withCount('lines')->where('type', $invoiceType)->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)));
                 $date($q);
 
-                return [['رقم الفاتورة', 'نوع الفاتورة', 'التاريخ', 'الوقت', 'الطرف', 'الهاتف', 'عدد الأصناف', 'إجمالي الكميات', 'المجموع قبل الحسم', 'نوع الحسم', 'قيمة الحسم', 'الإجمالي بعد الحسم', 'المدفوع عند الإنشاء', 'إجمالي المدفوع', 'المتبقي', 'حالة الدفع', 'رقم الفاتورة الأصلية'], $q->withSum('lines', 'quantity')->get()->map(fn ($i) => [$i->id, $i->isSale() ? 'بيع' : ($i->isPurchase() ? 'شراء' : 'مرتجع'), $i->created_at->format('Y-m-d'), $i->created_at->format('H:i'), $i->partner?->name ?: 'نقدي', $i->partner?->phone, $i->lines_count, $i->lines_sum_quantity, $i->subtotal, $i->discount_type === 'percentage' ? 'نسبة مئوية' : ($i->discount_amount > 0 ? 'مبلغ ثابت' : 'بدون حسم'), $i->discount_amount, $i->total, $i->initial_paid, $i->amount_paid, $i->remaining, $i->remaining <= 0 ? 'مدفوعة بالكامل' : ($i->amount_paid > 0 ? 'مدفوعة جزئيًا' : 'غير مدفوعة'), $i->original_invoice_id])->all()];
+                return [['رقم الفاتورة', 'نوع الفاتورة', 'التاريخ', 'الوقت', 'الطرف', 'الهاتف', 'عدد الأصناف', 'إجمالي الكميات', 'المجموع قبل الحسم', 'نوع الحسم', 'قيمة الحسم', 'الإجمالي بعد الحسم', 'المدفوع عند الإنشاء', 'إجمالي المدفوع', 'المتبقي', 'حالة الدفع', 'رقم الفاتورة الأصلية'], $q->withSum('lines', 'quantity')->get()->map(fn ($i) => [$i->id, $i->isSale() ? 'بيع' : ($i->isPurchase() ? 'شراء' : 'مرتجع'), $i->created_at->format('Y-m-d'), $i->created_at->format('H:i'), $i->partner?->name ?: 'نقدي', $i->partner?->phone, $i->lines_count, $i->lines_sum_quantity, $i->subtotal, $i->discount_type === 'percentage' ? 'نسبة مئوية' : ($i->discount_amount > 0 ? 'مبلغ ثابت' : 'بدون حسم'), $i->discount_amount, $i->total, $i->initial_paid, $i->effective_paid, $i->remaining, $i->remaining <= 0 ? 'مدفوعة بالكامل' : ($i->effective_paid > 0 ? 'مدفوعة جزئيًا' : 'غير مدفوعة'), $i->original_invoice_id])->all()];
             })(),
             'inventory' => (function () use ($category) {
                 $q = Product::query()->with('category')->when($category, fn ($q) => $q->where('category_id', $category));
@@ -241,12 +238,12 @@ class ReportService
             'partners' => (function () use ($partner) {
                 $q = app(FinancialService::class)->partnerBalancesQuery()->when($partner, fn ($q) => $q->whereKey($partner));
 
-                return [['الرقم', 'الاسم', 'النوع', 'الهاتف', 'الذمة المدينة', 'الذمة الدائنة'], $q->get()->map(fn ($p) => [$p->id, $p->name, $p->isCustomer() ? 'عميل' : 'مورد', $p->phone, app(FinancialService::class)->receivable($p), app(FinancialService::class)->payable($p)])->all()];
+                return [['الرقم', 'الاسم', 'النوع', 'الهاتف', 'الذمة المدينة', 'الذمة الدائنة'], $q->get()->map(fn ($p) => [$p->id, $p->name, $p->isCustomer() ? 'السيد' : 'مورد', $p->phone, app(FinancialService::class)->receivable($p), app(FinancialService::class)->payable($p)])->all()];
             })(),
             'payments' => (function () use ($partner, $from, $to) {
-                $q = LedgerSettlement::query()->with('partner')->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($from, fn ($q) => $q->whereDate('settlement_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('settlement_date', '<=', $to));
+                $q = LedgerSettlement::query()->with('partner', 'invoice')->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($from, fn ($q) => $q->whereDate('settlement_date', '>=', $from))->when($to, fn ($q) => $q->whereDate('settlement_date', '<=', $to));
 
-                return [['الرقم', 'الطرف', 'نوع الطرف', 'التاريخ', 'نوع الحركة', 'المبلغ', 'ملاحظات'], $q->get()->map(fn ($p) => [$p->id, $p->partner?->name, $p->partner?->isCustomer() ? 'عميل' : 'مورد', $p->settlement_date->format('Y-m-d'), $p->type === LedgerSettlement::TYPE_INCOMING ? 'قبض' : 'دفع', $p->amount, $p->notes])->all()];
+                return [['الرقم', 'الطرف', 'نوع الطرف', 'التاريخ', 'نوع الحركة', 'طريقة الدفع', 'مرجع الفاتورة', 'المبلغ', 'ملاحظات'], $q->get()->map(fn ($p) => [$p->id, $p->partner?->name, $p->partner?->isCustomer() ? 'السيد' : 'مورد', $p->settlement_date->format('Y-m-d'), $p->type === LedgerSettlement::TYPE_INCOMING ? 'قبض' : 'دفع', $p->payment_method, $p->invoice_id, $p->amount, $p->notes])->all()];
             })(),
             'expenses' => (function () use ($date) {
                 $q = DB::table('expenses');
@@ -269,7 +266,7 @@ class ReportService
                 $q = Quotation::query()->with('partner')->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)));
                 $date($q, 'quotation_date');
 
-                return [['الرقم', 'العميل', 'التاريخ', 'المجموع', 'نوع الحسم', 'قيمة الحسم', 'مبلغ الحسم', 'الإجمالي'], $q->get()->map(fn ($r) => [$r->number, $r->display_customer, $r->quotation_date->format('Y-m-d'), $r->subtotal, $r->discount_type === 'percentage' ? 'نسبة مئوية' : ($r->discount_amount > 0 ? 'ثابت' : 'بدون حسم'), $r->discount_value, $r->discount_amount, $r->total])->all()];
+                return [['الرقم', 'السيد', 'التاريخ', 'المجموع', 'نوع الحسم', 'قيمة الحسم', 'مبلغ الحسم', 'الإجمالي'], $q->get()->map(fn ($r) => [$r->number, $r->display_customer, $r->quotation_date->format('Y-m-d'), $r->subtotal, $r->discount_type === 'percentage' ? 'نسبة مئوية' : ($r->discount_amount > 0 ? 'ثابت' : 'بدون حسم'), $r->discount_value, $r->discount_amount, $r->total])->all()];
             })(),
             'notifications' => (function () use ($date) {
                 $q = InAppNotification::query();
@@ -338,7 +335,9 @@ class ReportService
             $invoices = $events->pluck('invoice')->unique('id');
             $rows = $events->flatMap(function ($event) use ($categoryId) {
                 $invoice = $event['invoice'];
-                $lines = $invoice->isSale() ? $invoice->lines->concat($invoice->returns->flatMap->lines) : $invoice->lines;
+                $lines = $invoice->isSale()
+                    ? $invoice->lines->concat($invoice->returns->where('return_preserves_original', false)->flatMap->lines)
+                    : $invoice->lines;
                 if ($categoryId) {
                     $lines = $lines->filter(fn ($line) => (int) $line->product?->category_id === (int) $categoryId);
                 }
@@ -362,18 +361,18 @@ class ReportService
         $this->style($sheet, 11, count($rows) + 1);
 
         $partnerIds = $invoices->pluck('partner_id')->filter()->unique();
-        $payments = LedgerSettlement::query()->with('partner')->whereIn('partner_id', $partnerIds)
+        $payments = LedgerSettlement::query()->with('partner', 'invoice')->whereIn('partner_id', $partnerIds)
             ->when($filters['from'] ?? null, fn ($q, $date) => $q->whereDate('settlement_date', '>=', $date))
             ->when($filters['to'] ?? null, fn ($q, $date) => $q->whereDate('settlement_date', '<=', $date))->get()
-            ->map(fn ($payment) => [$payment->id, $payment->partner?->name, $payment->settlement_date->format('Y-m-d'), $payment->type === LedgerSettlement::TYPE_INCOMING ? 'قبض' : 'دفع', $payment->amount, $payment->notes])->all();
+            ->map(fn ($payment) => [$payment->id, $payment->partner?->name, $payment->settlement_date->format('Y-m-d'), $payment->type === LedgerSettlement::TYPE_INCOMING ? 'قبض' : 'دفع', $payment->payment_method, $payment->invoice_id, $payment->amount, $payment->notes])->all();
         $paymentSheet = $spreadsheet->createSheet();
         $paymentSheet->setRightToLeft(true);
         $paymentSheet->setTitle(mb_substr('حركات أطراف '.self::TYPES[$type], 0, 31));
-        $paymentSheet->fromArray(['رقم الحركة', 'الطرف', 'التاريخ', 'نوع الحركة', 'المبلغ', 'ملاحظات'], null, 'A1');
+        $paymentSheet->fromArray(['رقم الحركة', 'الطرف', 'التاريخ', 'نوع الحركة', 'طريقة الدفع', 'مرجع الفاتورة', 'المبلغ', 'ملاحظات'], null, 'A1');
         if ($payments) {
             $paymentSheet->fromArray($payments, null, 'A2');
         }
-        $this->style($paymentSheet, 6, count($payments) + 1);
+        $this->style($paymentSheet, 8, count($payments) + 1);
 
         if ($type === 'sales') {
             $returns = Invoice::query()->active()->with('partner')->where('type', Invoice::TYPE_RETURN)->whereHas('originalInvoice', fn ($q) => $q->active())

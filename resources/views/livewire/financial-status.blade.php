@@ -67,12 +67,12 @@
                     </dl>
                     @if($nonzero($summary['sales_paid_at_issue']) || $nonzero($summary['additional_collections']) || $nonzero($summary['refunds']) || $nonzero($summary['supplier_refunds']))
                         <details class="financial-detail">
-                            <summary>تفصيل تحصيل العملاء والمبالغ المعادة</summary>
+                            <summary>تفصيل تحصيل السادة والمبالغ المعادة</summary>
                             <dl>
                                 @foreach([
-                                    'sales_paid_at_issue' => 'مدفوع العملاء عند إنشاء البيع',
-                                    'additional_collections' => 'تحصيل ذمم العملاء لاحقاً',
-                                    'refunds' => 'مبالغ معادة للعملاء',
+                                    'sales_paid_at_issue' => 'مدفوع السادة عند إنشاء البيع',
+                                    'additional_collections' => 'تحصيل ذمم السادة لاحقاً',
+                                    'refunds' => 'مبالغ معادة للسادة',
                                     'supplier_refunds' => 'مبالغ مستلمة من الموردين',
                                 ] as $key => $label)
                                     @if($nonzero($summary[$key]))<div><dt>{{ $label }}</dt><dd>{{ $money($summary[$key]) }}</dd></div>@endif
@@ -101,8 +101,8 @@
                 @if($nonzero($summary['pass_through_advances']))
                     <article class="workspace-card financial-card financial-pass-through">
                         <h3>المبالغ العابرة</h3>
-                        <dl><div><dt>سلف مدفوعة نيابة عن العملاء</dt><dd>{{ $money($summary['pass_through_advances']) }}</dd></div></dl>
-                        <small>تُخصم نقداً عند إصدار الفاتورة، ويُدرج استردادها ضمن مقبوضات العميل مرة واحدة. ليست إيراداً أو مصروفاً أو مخزوناً؛ أثرها النهائي صفر عند استردادها بالكامل. لا تُخصص الدفعات الجزئية تلقائياً بين البضاعة والسلف.</small>
+                        <dl><div><dt>سلف مدفوعة نيابة عن السادة</dt><dd>{{ $money($summary['pass_through_advances']) }}</dd></div></dl>
+                        <small>تُخصم نقداً عند إصدار الفاتورة، ويُدرج استردادها ضمن مقبوضات السيد مرة واحدة. ليست إيراداً أو مصروفاً أو مخزوناً؛ أثرها النهائي صفر عند استردادها بالكامل. لا تُخصص الدفعات الجزئية تلقائياً بين البضاعة والسلف.</small>
                     </article>
                 @endif
             </div>
@@ -133,18 +133,18 @@
             </div>
             <div class="financial-section-grid">
                 <article class="workspace-card financial-card">
-                    <h3>ذمم العملاء</h3>
+                    <h3>ذمم السادة</h3>
                     @if($nonzero($summary['customer_invoiced']) || $nonzero($summary['customer_collected']) || $nonzero($summary['receivables']) || $nonzero($summary['customer_credits']))
                         <dl>
-                            <div><dt>إجمالي المبالغ المستحقة على العملاء</dt><dd>{{ $money($summary['customer_invoiced']) }}</dd></div>
+                            <div><dt>إجمالي المبالغ المستحقة على السادة</dt><dd>{{ $money($summary['customer_invoiced']) }}</dd></div>
                             <div><dt>إجمالي المبالغ المحصلة</dt><dd>{{ $money($summary['customer_collected']) }}</dd></div>
                             <div class="emphasis"><dt>الرصيد المتبقي</dt><dd>{{ $money($summary['receivables']) }}</dd></div>
-                            @if($nonzero($summary['customer_credits']))<div><dt>أرصدة مستحقة للعملاء</dt><dd>{{ $money($summary['customer_credits']) }}</dd></div>@endif
+                            @if($nonzero($summary['customer_credits']))<div><dt>أرصدة مستحقة للسادة</dt><dd>{{ $money($summary['customer_credits']) }}</dd></div>@endif
                         </dl>
                     @else
-                        <p class="financial-empty">لا توجد ذمم أو تحصيلات مسجلة للعملاء.</p>
+                        <p class="financial-empty">لا توجد ذمم أو تحصيلات مسجلة للسادة.</p>
                     @endif
-                    <small>فواتير العملاء المسجلين بعد المرتجعات، بما فيها التوصيل والمبالغ العابرة. المحصل يشمل دفعة الفاتورة والتسويات بعد طرح الاستردادات. أرصدة العملاء الدائنة لا تُقاص مع ديون عملاء آخرين.</small>
+                    <small>فواتير السادة المسجلين بعد المرتجعات، بما فيها التوصيل والمبالغ العابرة. المحصل يشمل دفعة الفاتورة والتسويات بعد طرح الاستردادات. أرصدة السادة الدائنة لا تُقاص مع ديون سادة آخرين.</small>
                 </article>
 
                 <article class="workspace-card financial-card" id="financial-suppliers">

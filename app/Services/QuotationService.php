@@ -61,11 +61,11 @@ class QuotationService
             if (! in_array($locked->status, ['accepted', 'sent', 'draft'], true)) {
                 throw ValidationException::withMessages(['convert' => 'لا يمكن تحويل هذا العرض في وضعه الحالي.']);
             }
-            if (D::cmp($amountPaid, 0) < 0 || D::cmp($amountPaid, $locked->total) > 0) {
+            if (D::cmp($amountPaid, 0) < 0) {
                 throw ValidationException::withMessages(['amountPaid' => 'المبلغ المدفوع غير صالح.']);
             }
-            if (! $locked->partner_id && D::cmp($amountPaid, $locked->total) < 0) {
-                throw ValidationException::withMessages(['partner_id' => 'يجب اختيار عميل عند وجود مبلغ متبقٍ.']);
+            if (! $locked->partner_id && D::cmp($amountPaid, $locked->total) !== 0) {
+                throw ValidationException::withMessages(['partner_id' => 'يجب اختيار السيد عند وجود دين أو دفعة زائدة.']);
             }
 
             $products = Product::query()->whereIn('id', $locked->lines->pluck('product_id')->filter())
@@ -89,7 +89,8 @@ class QuotationService
                 'partner_id' => $locked->partner_id, 'type' => Invoice::TYPE_SALE,
                 'subtotal' => $pricing['subtotal'], 'discount_type' => $pricing['discount_type'],
                 'discount_value' => $pricing['discount_value'], 'discount_amount' => $pricing['discount_amount'],
-                'total' => $pricing['total'], 'initial_paid' => $amountPaid, 'amount_paid' => $amountPaid,
+                'total' => $pricing['total'], 'payable_total' => $pricing['total'],
+                'initial_paid' => $amountPaid, 'amount_paid' => $amountPaid,
             ]);
             foreach ($pricing['lines'] as $line) {
                 $product = $products->get($line['product_id']);

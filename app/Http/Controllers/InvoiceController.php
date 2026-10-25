@@ -7,7 +7,9 @@ use App\Services\AlertService;
 use App\Services\FinancialService;
 use App\Services\InvoiceCancellationService;
 use App\Services\InvoiceService;
+use App\Services\SalesAccountingService;
 use App\Services\SettingsService;
+use App\Services\ThermalPrintSettings;
 use App\Services\WindowsReceiptCutter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -20,15 +22,15 @@ class InvoiceController extends Controller
 {
     public function show(Invoice $invoice, FinancialService $financials, SettingsService $settings, InvoiceService $invoiceService, InvoiceCancellationService $cancellations): View
     {
-        $invoice->load(['partner', 'lines', 'additionalLines', 'returns']);
+        $invoice->load(['partner', 'lines', 'additionalLines', 'returns', 'settlements']);
         $expectedType = str_contains(request()->path(), 'sales') ? Invoice::TYPE_SALE : Invoice::TYPE_PURCHASE;
         abort_if($invoice->type !== $expectedType && $invoice->type !== Invoice::TYPE_RETURN, 404);
         $partner = $invoice->partner_id ? $financials->partnerBalancesQuery()->find($invoice->partner_id) : null;
-        $balance = $partner ? $financials->balanceFor($partner, $invoice->isPurchase() ? 'payable' : 'receivable') : 0;
+        $balance = $partner ? $financials->signedBalance($partner) : 0;
 
         return view('invoices.show', [
             'invoice' => $invoice,
-            'profitability' => $invoice->isSale() ? app(\App\Services\SalesAccountingService::class)->profitability($invoice) : null,
+            'profitability' => $invoice->isSale() ? app(SalesAccountingService::class)->profitability($invoice) : null,
             'currentPartnerBalance' => $balance,
             'settings' => $settings,
             'editBlockReason' => $invoiceService->editBlockReason($invoice),
@@ -56,13 +58,14 @@ class InvoiceController extends Controller
         return redirect()->route('invoices.purchases.show', $invoice)->with('success', 'تم إلغاء فاتورة الشراء وعكس أثر المخزون مرة واحدة مع الاحتفاظ بسجلها.');
     }
 
-    public function receipt(Invoice $invoice, SettingsService $settings): View
+    public function receipt(Invoice $invoice, SettingsService $settings, ThermalPrintSettings $thermalSettings): View
     {
         abort_unless($invoice->isSale() || $invoice->isPurchase() || $invoice->isReturn(), 404);
 
         return view('invoices.receipt', [
-            'invoice' => $invoice->load(['partner', 'lines', 'additionalLines', 'originalInvoice']),
+            'invoice' => $invoice->load(['partner', 'lines', 'additionalLines', 'originalInvoice', 'settlements']),
             'settings' => $settings,
+            'thermal' => $thermalSettings->resolve(),
         ]);
     }
 

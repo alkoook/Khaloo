@@ -1,16 +1,16 @@
 @extends('layouts.app')
 
-@section('title', 'إضافة زبون/مورد')
+@section('title', 'إضافة السيد/المورد')
 
 @section('content')
 <div class="rounded-xl p-6 max-w-2xl" style="background: var(--app-card); border: 1px solid var(--app-border);">
-    <h2 class="text-xl font-semibold mb-4" style="color: var(--app-primary);">إضافة زبون / مورد</h2>
+    <h2 class="text-xl font-semibold mb-4" style="color: var(--app-primary);">إضافة السيد / المورد</h2>
     <form action="{{ route('partners.store') }}" method="POST" enctype="multipart/form-data" class="space-y-4">
         @csrf
         <div>
             <label for="type" class="block text-sm font-medium mb-1">النوع *</label>
             <select id="type" name="type" class="rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
-                <option value="customer" {{ old('type', 'customer') === 'customer' ? 'selected' : '' }}>زبون</option>
+                <option value="customer" {{ old('type', 'customer') === 'customer' ? 'selected' : '' }}>السيد</option>
                 <option value="supplier" {{ old('type') === 'supplier' ? 'selected' : '' }}>مورد</option>
             </select>
         </div>

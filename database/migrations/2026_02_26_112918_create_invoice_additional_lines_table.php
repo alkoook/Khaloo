@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('invoice_id')->constrained()->cascadeOnDelete();
             $table->string('description');
-            $table->decimal('quantity', 12, 3);
+            $table->decimal('quantity', 14, 3);
             $table->decimal('unit_amount', 14, 2);
             $table->decimal('row_total', 14, 2);
             $table->string('source_note')->nullable();

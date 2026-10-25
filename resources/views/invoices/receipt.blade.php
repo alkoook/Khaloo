@@ -1,7 +1,5 @@
 @php
-    $width = in_array((string) $settings->get('receipt_width', '80'), ['72', '80'])
-        ? $settings->get('receipt_width', '80')
-        : '80';
+    $width = (string) $thermal['paper_width_mm'];
 
     $currency = (string) $settings->get('currency_symbol', 'ل.س');
 
@@ -10,14 +8,14 @@
         $settings->get('site_name', 'Khaloo')
     );
 
-    $companyPhones = $settings->invoicePhones();
+    $companyPhones = $thermal['company_phones'];
 
     $companyAddress = (string) $settings->get(
         'company_address',
         $settings->get('address', '')
     );
 
-    $invoiceLogo = $settings->get('invoice_logo', $settings->get('logo'));
+    $invoiceLogo = $thermal['logo'];
 
     $typeLabel = match (true) {
         $invoice->isReturn() => 'فاتورة مرتجع مبيعات',
@@ -25,7 +23,7 @@
         default => 'فاتورة مشتريات',
     };
 
-    $partyLabel = $invoice->isPurchase() ? 'المورد' : 'العميل';
+    $partyLabel = $invoice->isPurchase() ? 'المورد' : 'السيد';
 
     $invoiceNumber = '#'.$invoice->getKey();
 
@@ -35,18 +33,9 @@
     $discount = \App\Support\Decimal::cmp($invoice->discount_amount, 0) > 0
         ? $invoice->discount_amount : \App\Support\Decimal::max(0, \App\Support\Decimal::sub($itemsSubtotal, $invoice->total));
 
-    $printFonts = [
-        'cairo' => 'Cairo, Tahoma, Arial, sans-serif',
-        'changa' => 'Changa, Tahoma, Arial, sans-serif',
-        'reem-kufi' => '"Reem Kufi", Tahoma, Arial, sans-serif',
-        'baloo' => '"Baloo Bhaijaan 2", Tahoma, Arial, sans-serif',
-    ];
-
-    $printFont = $printFonts[
-        $settings->get('font_family', 'cairo')
-    ] ?? $printFonts['cairo'];
-
-    $receiptFontSize = max(10, min(16, (int) $settings->get('receipt_font_size', 12)));
+    $printFont = $thermal['font_family'];
+    $receiptFontSize = $thermal['font_size_px'];
+    $invoiceBalance = $invoice->isReturn() ? null : $invoice->balance;
 @endphp
 
 <!DOCTYPE html>
@@ -79,7 +68,7 @@
             --receipt-font-scale: {{ $receiptFontSize / 12 }};
         }
     </style>
-    <style id="receipt-page-size"></style>
+    <style id="receipt-page-size">@page { size: {{ $width }}mm auto; margin: 0; }</style>
 </head>
 
 <body class="receipt-page" data-document-kind="{{ $invoice->isReturn() ? 'return' : 'invoice' }}" data-preview-theme="{{ $settings->get('theme', 'arctic-cobalt') }}" data-auto-cut="{{ $settings->get('receipt_auto_cut', true) ? '1' : '0' }}" data-cut-url="{{ route('invoices.receipt.cut', $invoice) }}">
@@ -134,6 +123,9 @@
                             {{ $companyName }}
                         </h1>
                         <div class="receipt-document-title">{{ $typeLabel }}</div>
+                        @if($settings->get('receipt_show_phone', true) && $companyPhones !== [])
+                            <div class="receipt-brand__phones" dir="ltr">@foreach($companyPhones as $phone)<span>{{ $phone }}</span>@endforeach</div>
+                        @endif
                     </div>
                 </div>
             @endif
@@ -179,28 +171,6 @@
             @endif
 
 
-            {{-- رقم الهاتف --}}
-            @if(
-                $settings->get('receipt_show_phone', true)
-                && $companyPhones !== []
-            )
-                @foreach($companyPhones as $phone)
-                    <div class="receipt-fact-box receipt-fact-box--phone">
-                        <div class="receipt-fact-value" dir="ltr">{{ $phone }}</div>
-                    </div>
-                @endforeach
-            @endif
-
-
-            {{-- العنوان --}}
-            @if(filled($companyAddress))
-                <div class="receipt-fact-box receipt-fact-box--address">
-                    <div class="receipt-fact-value">
-                        {{ $companyAddress }}
-                    </div>
-                </div>
-            @endif
-
         </div>
 
 
@@ -221,6 +191,10 @@
                 <strong>
                     {{ $invoice->partner->name }}
                 </strong>
+
+                @if(filled($invoice->partner->phone))
+                    <small dir="ltr">{{ $invoice->partner->phone }}</small>
+                @endif
 
             </div>
         @endif
@@ -397,7 +371,7 @@
 
                 <b>
                     {{ number_format(
-                        (float) $invoice->amount_paid,
+                        (float) ($invoice->isReturn() ? $invoice->amount_paid : $invoice->effective_paid),
                         2
                     ) }}
                     {{ $currency }}
@@ -410,14 +384,14 @@
             <div class="receipt-totals__remaining">
 
                 <span>
-                    {{ $invoice->isReturn() ? 'المخصوم من الذمة' : 'المتبقي' }}
+                    {{ $invoice->isReturn() ? 'المخصوم من الذمة' : (\App\Support\Decimal::cmp($invoiceBalance, 0) < 0 ? 'رصيد للسيد' : 'المتبقي') }}
                 </span>
 
                 <b>
                     {{ number_format(
                         $invoice->isReturn()
                             ? \App\Support\Decimal::max(0, \App\Support\Decimal::sub($invoice->total, $invoice->amount_paid))
-                            : (float) $invoice->remaining,
+                            : (float) (\App\Support\Decimal::cmp($invoiceBalance, 0) < 0 ? \App\Support\Decimal::sub(0, $invoiceBalance) : $invoiceBalance),
                         2
                     ) }}
                     {{ $currency }}
@@ -443,6 +417,7 @@
             <span class="receipt-footer__date" dir="rtl">
                 طُبع في {{ now()->format('Y-m-d H:i') }}
             </span>
+            @if(filled($companyAddress))<span>{{ $companyAddress }}</span>@endif
         </div>
     </footer>
 @endif

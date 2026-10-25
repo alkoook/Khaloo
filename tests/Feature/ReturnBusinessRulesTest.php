@@ -9,8 +9,8 @@ use App\Models\Product;
 use App\Services\FinancialService;
 use App\Services\InvoiceService;
 use App\Services\ReturnService;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     Http::fake();
@@ -30,6 +30,7 @@ function returnSale(float $paid, bool $withPartner = true): array
 function returnDebt(Partner $partner): float
 {
     $row = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($partner->id);
+
     return app(FinancialService::class)->receivable($row);
 }
 
@@ -38,7 +39,7 @@ test('fully paid sale returns stock and records only the cash actually refunded'
     $return = app(ReturnService::class)->processSalesReturn($invoice, 30, [$line->id => 3]);
 
     expect($product->fresh()->quantity)->toBe('3.000')
-        ->and((float) $invoice->fresh()->total)->toBe(70.0)
+        ->and((float) $invoice->fresh()->total)->toBe(100.0)
         ->and((float) $return->total)->toBe(30.0)
         ->and((float) $return->amount_paid)->toBe(30.0)
         ->and((float) LedgerSettlement::query()->where('partner_id', $partner->id)->where('type', 'outgoing')->sum('amount'))->toBe(30.0)
@@ -106,8 +107,8 @@ test('multiple returns cannot exceed sold quantity or repeat the same cash refun
     $service->processSalesReturn($invoice, 40, [$line->id => 4], (string) Str::uuid());
     expect(fn () => $service->processSalesReturn($invoice, 40, [$line->id => 4], (string) Str::uuid()))->toThrow(Exception::class);
     expect($product->fresh()->quantity)->toBe('7.000')
-        ->and($line->fresh()->quantity)->toBe('3.000')
-        ->and((float) $invoice->fresh()->total)->toBe(30.0)
+        ->and($line->fresh()->quantity)->toBe('10.000')
+        ->and((float) $invoice->fresh()->total)->toBe(100.0)
         ->and((float) LedgerSettlement::query()->where('type', 'outgoing')->sum('amount'))->toBe(70.0)
         ->and(returnDebt($partner))->toBe(0.0);
 });
@@ -116,8 +117,8 @@ test('full return clears debt and refunds only what customer actually paid', fun
     ['partner' => $partner, 'product' => $product, 'invoice' => $invoice, 'line' => $line] = returnSale(40);
     app(ReturnService::class)->processSalesReturn($invoice, 40, [$line->id => 10]);
     expect($product->fresh()->quantity)->toBe('10.000')
-        ->and($line->fresh()->quantity)->toBe('0.000')
-        ->and((float) $invoice->fresh()->total)->toBe(0.0)
+        ->and($line->fresh()->quantity)->toBe('10.000')
+        ->and((float) $invoice->fresh()->total)->toBe(100.0)
         ->and(returnDebt($partner))->toBe(0.0)
         ->and((float) LedgerSettlement::query()->where('type', 'outgoing')->sum('amount'))->toBe(40.0);
 });
@@ -131,14 +132,19 @@ test('anonymous paid sale can be returned without creating a fictitious partner 
         ->and(LedgerSettlement::query()->count())->toBe(0);
 });
 
-test('a sale with returns cannot be rewritten and invalid quantities roll back', function () {
+test('a sale with returns allows safe corrections and rejects quantity below prior returns', function () {
     ['product' => $product, 'invoice' => $invoice, 'line' => $line] = returnSale(100);
     $service = app(ReturnService::class);
     expect(fn () => $service->processSalesReturn($invoice, 0, [$line->id => 11]))->toThrow(Exception::class);
     expect(fn () => $service->processSalesReturn($invoice, 0, [$line->id => '1.0001']))->toThrow(Exception::class);
     expect($product->fresh()->quantity)->toBe('0.000');
     $service->processSalesReturn($invoice, 10, [$line->id => 1]);
-    expect(fn () => app(InvoiceService::class)->updateInvoice($invoice, [['product_id' => $product->id, 'quantity' => 9, 'unit_price' => 10]], 90))->toThrow(Exception::class);
-    expect($line->fresh()->quantity)->toBe('9.000')
-        ->and($product->fresh()->quantity)->toBe('1.000');
+    app(InvoiceService::class)->updateInvoice($invoice, [['product_id' => $product->id, 'quantity' => 9, 'unit_price' => 10]], 90);
+    $correctedLine = $invoice->fresh()->lines()->sole();
+    expect($correctedLine->quantity)->toBe('9.000')
+        ->and($product->fresh()->quantity)->toBe('2.000');
+    expect(fn () => app(InvoiceService::class)->updateInvoice($invoice->fresh(), [['product_id' => $product->id, 'quantity' => '0.500', 'unit_price' => 10]], 0))
+        ->toThrow(Exception::class, 'لا يمكن تخفيض الكمية المباعة');
+    expect($correctedLine->fresh()->quantity)->toBe('9.000')
+        ->and($product->fresh()->quantity)->toBe('2.000');
 });

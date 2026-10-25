@@ -82,7 +82,9 @@ test('purchase edit and cancellation preserve stock supplier balance and reports
     expect(fn () => app(InvoiceCancellationService::class)->cancel($invoice->fresh(), $user->id, 'محاولة إلغاء مكررة'))
         ->toThrow(ValidationException::class);
     expect($product->fresh()->quantity)->toBe('8.000');
-    $this->actingAs($user)->get(route('invoices.edit', $invoice))->assertStatus(409)->assertSee('لا يمكن تعديل فاتورة ملغاة');
+    $this->actingAs($user)->get(route('invoices.edit', $invoice))
+        ->assertRedirect(route('invoices.purchases.show', $invoice))
+        ->assertSessionHas('error', 'لا يمكن تعديل فاتورة ملغاة.');
 });
 
 test('later or consumed purchase stock keeps actions visible but safely disabled', function () {
@@ -101,7 +103,9 @@ test('later or consumed purchase stock keeps actions visible but safely disabled
         $this->actingAs($user)->get(route($route, $route === 'invoices.purchases.show' ? $invoice : []))->assertOk()
             ->assertSee('تعديل')->assertSee('إلغاء الفاتورة')->assertSee('حركات مخزون لاحقة');
     }
-    $this->actingAs($user)->get(route('invoices.edit', $invoice))->assertStatus(409)->assertSee('حركات مخزون لاحقة');
+    $this->actingAs($user)->get(route('invoices.edit', $invoice))
+        ->assertRedirect(route('invoices.purchases.show', $invoice))
+        ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'حركات مخزون لاحقة'));
     expect(fn () => app(InvoiceCancellationService::class)->cancel($invoice, $user->id, 'محاولة غير آمنة'))
         ->toThrow(ValidationException::class);
     expect($product->fresh()->quantity)->toBe('9.000');

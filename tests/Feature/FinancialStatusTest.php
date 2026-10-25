@@ -79,7 +79,7 @@ test('sales returns reduce net sales cogs inventory and cash only when a refund 
     app(ReturnService::class)->processSalesReturn($sale, 10, [$line->id => 1], (string) Str::uuid());
     $summary = app(FinancialStatusService::class)->summary(now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString());
 
-    expect($sale->fresh()->total)->toBe('10.00')
+    expect($sale->fresh()->total)->toBe('20.00')
         ->and($product->fresh()->quantity)->toBe('1.000')
         ->and($summary['net_sales'])->toBe('10.00')
         ->and($summary['cogs'])->toBe('5.00')
@@ -257,7 +257,7 @@ test('cash position uses the settlement date while receivables remain independen
         ->and($summary['receivables'])->toBe('70.00');
 });
 
-test('payment register refuses a settlement larger than the current balance', function () {
+test('payment register preserves an overpayment as customer credit', function () {
     $user = User::factory()->create();
     $product = financialProduct();
     $customer = Partner::query()->create(['name' => 'عميل حماية التسوية', 'type' => Partner::TYPE_CUSTOMER]);
@@ -270,9 +270,11 @@ test('payment register refuses a settlement larger than the current balance', fu
         ->set('amount', '30.01')
         ->set('settlementDate', now()->toDateString())
         ->call('addPayment')
-        ->assertHasErrors(['amount']);
+        ->assertHasNoErrors();
 
-    expect(LedgerSettlement::query()->count())->toBe(0);
+    $row = app(FinancialService::class)->partnerBalancesQuery()->findOrFail($customer->id);
+    expect(LedgerSettlement::query()->count())->toBe(1)
+        ->and(app(FinancialService::class)->signedBalance($row))->toBe('-0.01');
 });
 
 test('account statement carries the opening balance into a date-filtered closing balance', function () {
@@ -292,10 +294,10 @@ test('account statement carries the opening balance into a date-filtered closing
     try {
         $sheet = IOFactory::load($path)->getActiveSheet();
 
-        expect($sheet->getCell('C4')->getValue())->toBe('الرصيد الافتتاحي')
-            ->and((float) $sheet->getCell('F4')->getValue())->toBe(100.0)
-            ->and((float) $sheet->getCell('F5')->getValue())->toBe(70.0)
-            ->and((float) $sheet->getCell('F6')->getValue())->toBe(70.0);
+        expect($sheet->getCell('D4')->getValue())->toBe('الرصيد الافتتاحي')
+            ->and((float) $sheet->getCell('G4')->getValue())->toBe(100.0)
+            ->and((float) $sheet->getCell('G5')->getValue())->toBe(70.0)
+            ->and((float) $sheet->getCell('G6')->getValue())->toBe(70.0);
     } finally {
         @unlink($path);
     }
@@ -501,7 +503,7 @@ test('financial status renders period purchases and pass through data separately
     financialInvoice('purchase', $supplier, 100, 20, $product, 10);
     Livewire::actingAs(User::factory()->create())->test(FinancialStatus::class)
         ->assertSee('المبالغ العابرة')->assertSee('المشتريات')->assertSee('المتبقي عند إنشاء فواتير الفترة')
-        ->assertSee('الربحية')->assertSee('السيولة والحركة النقدية')->assertSee('ذمم العملاء')->assertSee('ذمم الموردين')
+        ->assertSee('الربحية')->assertSee('السيولة والحركة النقدية')->assertSee('ذمم السادة')->assertSee('ذمم الموردين')
         ->assertSee('المخزون')->assertSee('النشاط خلال الفترة')->assertSee('105.00')->assertSee('80.00');
 });
 

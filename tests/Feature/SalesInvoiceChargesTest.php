@@ -12,6 +12,7 @@ use App\Services\FinancialStatusService;
 use App\Services\InvoiceCancellationService;
 use App\Services\InvoiceService;
 use App\Services\ReturnService;
+use App\Support\Decimal;
 use Livewire\Livewire;
 
 function chargeFixture(): array
@@ -154,17 +155,17 @@ test('cancellation and returns ignore pass through rows for stock', function () 
     $line = $invoice->lines()->sole();
 
     app(ReturnService::class)->processSalesReturn($invoice, 0, [$line->id => 1]);
-    expect($invoice->fresh()->collectibleTotal())->toBe('15.00')
+    expect($invoice->fresh()->collectibleTotal())->toBe('115.00')
         ->and((float) $invoice->fresh()->additional_total)->toBe(10.0)
         ->and(InvoiceAdditionalLine::query()->where('invoice_id', $invoice->id)->count())->toBe(1)
-        ->and($product->fresh()->quantity)->toBe(\App\Support\Decimal::add($stockAfterSale, 1, 3));
+        ->and($product->fresh()->quantity)->toBe(Decimal::add($stockAfterSale, 1, 3));
 
     $second = createChargedSale($user, $partner, $product, delivery: 5, additional: [[
         'description' => 'غرض آخر', 'quantity' => 1, 'unit_amount' => 10, 'source_note' => null,
     ]], paid: 0);
     $beforeCancel = $product->fresh()->quantity;
     app(InvoiceCancellationService::class)->cancel($second, $user->id, 'إلغاء اختبار الرسوم');
-    expect($product->fresh()->quantity)->toBe(\App\Support\Decimal::add($beforeCancel, 1, 3));
+    expect($product->fresh()->quantity)->toBe(Decimal::add($beforeCancel, 1, 3));
 });
 
 test('sales display and thermal receipt separate all customer charges', function () {

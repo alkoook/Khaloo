@@ -8,13 +8,18 @@ use Illuminate\Support\Collection;
 
 class SalesAccountingService
 {
-    /** Remaining sale lines are already reduced by returns. Never subtract a return twice. */
+    /** Return documents are separate events; legacy mutated sales are reconstructed once. */
     public function profitability(Invoice $invoice): array
     {
         $invoice->loadMissing('lines');
         $active = $invoice->isSale() && ! $invoice->isCancelled();
-        $cost = $this->cost($active ? $invoice->lines : collect());
-        $net = $active ? D::scale($invoice->total) : '0.00';
+        $returns = $active ? $invoice->returns()->active()->with('lines')->get() : collect();
+        $legacyReturns = $returns->where('return_preserves_original', false);
+        $lines = $active ? $invoice->lines->concat($legacyReturns->flatMap->lines) : collect();
+        $grossCost = $this->cost($lines);
+        $returnCost = $this->cost($returns->flatMap->lines);
+        $cost = ['total' => D::sub($grossCost['total'], $returnCost['total'], 7), 'unknown' => $grossCost['unknown'] + $returnCost['unknown']];
+        $net = $active ? D::sub(D::add($invoice->total, D::sum($legacyReturns->pluck('total'))), D::sum($returns->pluck('total'))) : '0.00';
         $delivery = $active ? D::scale($invoice->delivery_amount) : '0.00';
         $revenue = D::add($net, $delivery);
         $profit = $cost['unknown'] ? null : D::sub($revenue, $cost['total']);
@@ -40,18 +45,19 @@ class SalesAccountingService
                     ->orWhereHas('returns', fn ($q) => $q->active()->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
                         ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to)));
             }))
-            ->with(['partner', 'lines.product', 'returns' => fn ($q) => $q->active(), 'returns.lines.product'])->get();
+            ->with(['partner', 'settlements', 'lines.product', 'returns' => fn ($q) => $q->active(), 'returns.lines.product'])->get();
         foreach ($sales as $sale) {
             $selectLines = fn ($lines) => $categoryId ? $lines->filter(fn ($line) => (int) $line->product?->category_id === $categoryId) : $lines;
-            $remaining = $selectLines($sale->lines);
-            $returned = $sale->returns->flatMap(fn ($return) => $selectLines($return->lines));
-            $allLines = $remaining->concat($returned);
+            $issued = $selectLines($sale->lines);
+            $legacyReturned = $sale->returns->where('return_preserves_original', false)
+                ->flatMap(fn ($return) => $selectLines($return->lines));
+            $allLines = $issued->concat($legacyReturned);
             $cost = $this->cost($allLines);
             $merchandise = $categoryId ? D::sum($allLines->map(fn ($line) => $line->net_line_total ?? $line->line_total))
-                : D::add($sale->total, D::sum($sale->returns->pluck('total')));
+                : D::add($sale->total, D::sum($sale->returns->where('return_preserves_original', false)->pluck('total')));
             $subtotal = D::sum($allLines->pluck('line_total'));
             if (! $categoryId && D::cmp($sale->subtotal, 0) > 0) {
-                $subtotal = D::add($sale->subtotal, D::sum($sale->returns->pluck('subtotal')));
+                $subtotal = D::add($sale->subtotal, D::sum($sale->returns->where('return_preserves_original', false)->pluck('subtotal')));
             }
             if ($this->inPeriod($sale->created_at->toDateString(), $from, $to) && (! $categoryId || $allLines->isNotEmpty())) {
                 $events->push(['invoice' => $sale, 'date' => $sale->created_at, 'merchandise' => $merchandise,

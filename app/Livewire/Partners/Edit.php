@@ -74,7 +74,7 @@ class Edit extends Component
         }
 
         $this->partner->update($data);
-        app(\App\Services\TelegramService::class)->notifyUpdated('partner', $this->partner->name ?? ($this->partner->type === 'customer' ? 'زبون' : 'مورد').' #'.$this->partner->id);
+        app(\App\Services\TelegramService::class)->notifyUpdated('partner', $this->partner->name ?? ($this->partner->type === 'customer' ? 'السيد' : 'مورد').' #'.$this->partner->id);
         session()->flash('success', 'تم التحديث.');
 
         $this->redirectRoute('partners.index', navigate: true);

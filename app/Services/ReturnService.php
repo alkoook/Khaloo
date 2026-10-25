@@ -2,52 +2,58 @@
 
 namespace App\Services;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\LedgerSettlement;
 use App\Models\Product;
 use App\Support\Decimal as D;
-use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ReturnService
 {
     /**
-     * A return reduces the original sale total and remaining line quantities.
-     * The return invoice is an audit record only. Cash actually handed back is
-     * stored as an outgoing settlement so the customer's net paid amount stays correct.
+     * A return is an independent historical document. It restores stock and credits
+     * the customer ledger, but never rewrites the issued sale or its lines.
      */
     public function processSalesReturn(Invoice $originalInvoice, mixed $refundAmount, array $returnQuantities, ?string $requestKey = null): Invoice
     {
         if (! $originalInvoice->isSale()) {
-            throw new Exception('يمكن إرجاع فواتير المبيعات فقط.');
+            throw new BusinessRuleException('يمكن إرجاع فواتير المبيعات فقط.');
         }
         if (D::cmp($refundAmount, 0) < 0) {
-            throw new Exception('قيمة الاسترداد لا يمكن أن تكون سالبة.');
+            throw new BusinessRuleException('قيمة الاسترداد لا يمكن أن تكون سالبة.');
         }
         if ($requestKey !== null && ! Str::isUuid($requestKey)) {
-            throw new Exception('طلب المرتجع غير صالح.');
+            throw new BusinessRuleException('طلب المرتجع غير صالح.');
         }
         $refundAmount = D::scale($refundAmount);
 
         [$invoice, $linesData, $replayed] = DB::transaction(function () use ($originalInvoice, $refundAmount, $returnQuantities, $requestKey): array {
             $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($originalInvoice->id);
             if ($lockedInvoice->isCancelled()) {
-                throw new Exception('لا يمكن إنشاء مرتجع لفاتورة ملغاة.');
+                throw new BusinessRuleException('لا يمكن إنشاء مرتجع لفاتورة ملغاة.');
             }
             if ($requestKey !== null) {
                 $existing = Invoice::query()->where('return_request_key', $requestKey)->first();
                 if ($existing) {
                     if ($existing->original_invoice_id !== $lockedInvoice->id) {
-                        throw new Exception('طلب المرتجع غير صالح.');
+                        throw new BusinessRuleException('طلب المرتجع غير صالح.');
                     }
 
                     return [$existing, [], true];
                 }
             }
             $lines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
-            $originalSubtotalBefore = D::cmp($lockedInvoice->subtotal, 0) > 0 ? $lockedInvoice->subtotal : D::sum($lines->pluck('line_total'));
+            $independentReturnLines = Invoice::query()->active()
+                ->where('original_invoice_id', $lockedInvoice->id)
+                ->where('type', Invoice::TYPE_RETURN)
+                ->where('return_preserves_original', true)
+                ->with('lines:id,invoice_id,product_id,quantity,line_total,net_line_total')
+                ->get()->flatMap->lines;
+            $independentReturned = $independentReturnLines->groupBy('product_id')
+                ->map(fn ($returnLines): string => D::sum($returnLines->pluck('quantity'), 3));
             $items = [];
             $subtotal = '0.00';
             $total = '0.00';
@@ -57,22 +63,27 @@ class ReturnService
                 try {
                     $quantity = D::quantity($rawQuantity);
                 } catch (\Throwable) {
-                    throw new Exception('كمية المرتجع يجب أن تكون رقماً صالحاً حتى ثلاث منازل عشرية.');
+                    throw new BusinessRuleException('كمية المرتجع يجب أن تكون رقماً صالحاً حتى ثلاث منازل عشرية.');
                 }
                 if (D::cmp($quantity, 0) < 0) {
-                    throw new Exception('كمية المرتجع غير صالحة.');
+                    throw new BusinessRuleException('كمية المرتجع غير صالحة.');
                 }
-                if (D::cmp($quantity, $line->quantity) > 0) {
-                    throw new Exception("الكمية المرتجعة من {$line->product_name} أكبر من الكمية المتبقية في الفاتورة.");
+                $availableQuantity = D::sub($line->quantity, $independentReturned[$line->product_id] ?? 0, 3);
+                if (D::cmp($quantity, $availableQuantity) > 0) {
+                    throw new BusinessRuleException("لا يمكن تنفيذ هذا المرتجع لأن كمية «{$line->product_name}» المطلوب إرجاعها أكبر من الكمية المتبقية القابلة للإرجاع.");
                 }
                 if (D::cmp($quantity, 0) === 0) {
                     continue;
                 }
-                $lineTotal = D::cmp($quantity, $line->quantity) === 0 ? $line->line_total
-                    : D::div(D::of($line->line_total)->multipliedBy($quantity), $line->quantity);
                 $currentNet = $line->net_line_total ?? $line->line_total;
-                $netLineTotal = D::cmp($quantity, $line->quantity) === 0
-                    ? D::scale($currentNet)
+                $previousForProduct = $independentReturnLines->where('product_id', $line->product_id);
+                $remainingGross = D::sub($line->line_total, D::sum($previousForProduct->pluck('line_total')));
+                $remainingNet = D::sub($currentNet, D::sum($previousForProduct->map(fn ($returnLine) => $returnLine->net_line_total ?? $returnLine->line_total)));
+                $lineTotal = D::cmp($quantity, $availableQuantity) === 0
+                    ? D::scale($remainingGross)
+                    : D::min($remainingGross, D::div(D::of($line->line_total)->multipliedBy($quantity), $line->quantity));
+                $netLineTotal = D::cmp($quantity, $availableQuantity) === 0
+                    ? D::scale($remainingNet)
                     : D::div(D::of($currentNet)->multipliedBy($quantity), $line->quantity);
                 $lineDiscount = D::sub($lineTotal, $netLineTotal);
                 $items[] = compact('line', 'quantity', 'lineTotal', 'lineDiscount', 'netLineTotal');
@@ -81,13 +92,13 @@ class ReturnService
             }
 
             if ($items === []) {
-                throw new Exception('حدد كمية لمنتج واحد على الأقل.');
+                throw new BusinessRuleException('حدد كمية لمنتج واحد على الأقل.');
             }
             $subtotal = D::scale($subtotal);
             $total = D::scale($total);
             $discountAmount = D::sub($subtotal, $total);
             if (D::cmp($refundAmount, $total) > 0) {
-                throw new Exception('الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
+                throw new BusinessRuleException('الاسترداد النقدي لا يمكن أن يتجاوز إجمالي المرتجع.');
             }
 
             $debtBefore = D::max(0, D::sub($lockedInvoice->collectibleTotal(), $lockedInvoice->amount_paid));
@@ -97,7 +108,7 @@ class ReturnService
             }
             $maxRefund = D::max(0, D::sub($total, $debtBefore));
             if (D::cmp($refundAmount, $maxRefund) > 0) {
-                throw new Exception('الاسترداد النقدي أكبر من المبلغ المستحق للعميل بعد تسوية الدين.');
+                throw new BusinessRuleException('الاسترداد النقدي أكبر من المبلغ المستحق للسيد بعد تسوية الدين.');
             }
 
             $returnInvoice = Invoice::create([
@@ -112,6 +123,7 @@ class ReturnService
                 'initial_paid' => $refundAmount,
                 'amount_paid' => $refundAmount,
                 'return_request_key' => $requestKey,
+                'return_preserves_original' => true,
             ]);
 
             $notificationLines = [];
@@ -135,12 +147,6 @@ class ReturnService
                     'net_line_total' => $netLineTotal,
                 ]);
                 app(InventoryCostService::class)->restoreSaleStock($product, $quantity, $line->purchase_price);
-                $line->update([
-                    'quantity' => D::sub($line->quantity, $quantity, 3),
-                    'line_total' => D::sub($line->line_total, $lineTotal),
-                    'discount_amount' => D::sub($line->discount_amount, $lineDiscount),
-                    'net_line_total' => D::sub($line->net_line_total ?? $line->line_total, $netLineTotal),
-                ]);
                 $notificationLines[] = [
                     'product_id' => $product->id,
                     'product_name' => $line->product_name,
@@ -150,21 +156,31 @@ class ReturnService
                 ];
             }
 
-            $remainingDiscount = D::sub($lockedInvoice->discount_amount, $discountAmount);
-            $lockedInvoice->update([
-                'subtotal' => D::sub($originalSubtotalBefore, $subtotal),
-                'discount_amount' => $remainingDiscount,
-                'discount_value' => $lockedInvoice->discount_type === 'fixed' ? $remainingDiscount : $lockedInvoice->discount_value,
-                'total' => D::sub($lockedInvoice->total, $total),
-                'payable_total' => D::sub($lockedInvoice->collectibleTotal(), $total),
+            $returnInvoice->audits()->create([
+                'event' => 'created',
+                'user_id' => auth()->id(),
+                'new_values' => [
+                    'accounting_mode' => 'independent_return',
+                    'original_invoice_id' => $lockedInvoice->id,
+                    'subtotal' => $subtotal,
+                    'total' => $total,
+                    'cash_refund' => $refundAmount,
+                ],
             ]);
             if (D::cmp($refundAmount, 0) > 0 && $lockedInvoice->partner_id) {
-                LedgerSettlement::create([
+                $refund = LedgerSettlement::create([
                     'partner_id' => $lockedInvoice->partner_id,
+                    'invoice_id' => $lockedInvoice->id,
                     'amount' => D::scale($refundAmount),
                     'type' => LedgerSettlement::TYPE_OUTGOING,
+                    'payment_method' => 'cash',
                     'settlement_date' => now()->toDateString(),
                     'notes' => "استرداد نقدي لمرتجع فاتورة #{$lockedInvoice->id}",
+                ]);
+                $refund->audits()->create([
+                    'event' => 'created',
+                    'user_id' => auth()->id(),
+                    'new_values' => $refund->only(['partner_id', 'invoice_id', 'amount', 'type', 'payment_method', 'settlement_date', 'notes']),
                 ]);
             }
 
@@ -177,7 +193,7 @@ class ReturnService
 
         app(TelegramService::class)->sendInvoiceNotification(
             Invoice::TYPE_RETURN,
-            $invoice->partner?->name ?? 'زبون',
+            $invoice->partner?->name ?? 'السيد النقدي',
             number_format((float) $invoice->total, 2),
             number_format($refundAmount, 2),
             D::format(D::sub($invoice->total, $refundAmount)),

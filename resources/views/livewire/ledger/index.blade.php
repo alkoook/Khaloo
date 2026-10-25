@@ -22,7 +22,7 @@
                 اللي علينا
             </button>
         </div>
-        <small style="color: var(--app-muted);">{{ $tab === 'receivable' ? 'مبالغ باقية لنا لدى العملاء بعد المقبوضات.' : 'مبالغ مستحقة للموردين أو للعملاء عند وجود رصيد لهم.' }}</small>
+        <small style="color: var(--app-muted);">{{ $tab === 'receivable' ? 'مبالغ باقية لنا لدى السادة بعد المقبوضات.' : 'مبالغ مستحقة للموردين أو للسادة عند وجود رصيد لهم.' }}</small>
             <form method="get" action="{{ route('ledger.index') }}" class="inline">
                 <input type="hidden" name="open_modal" value="1">
                 <button type="submit" class="px-4 py-2 rounded-lg text-sm font-medium text-white" style="background: var(--app-primary);">إضافة دفعة</button>
@@ -99,7 +99,7 @@
                         <td class="px-4 py-3">
                             @if($row['partner'])
                             <div class="flex items-center gap-2">
-                                <button type="button" wire:click="showStatement({{ $row['partner']->id }})" class="ghost-button" title="عرض كشف الحركات">الحركات</button>
+                                <a href="{{ route('statements.show', ['partner' => $row['partner'], 'from' => $dateFrom, 'to' => $dateTo]) }}" class="ghost-button" title="عرض كشف الحساب">كشف الحساب</a>
                             <form method="POST" action="{{ route('telegram.send-ledger') }}" class="inline">
                                 @csrf
                                 <input type="hidden" name="partner_id" value="{{ $row['partner']->id }}">
@@ -133,7 +133,7 @@
                         <td class="px-4 py-3">
                             @if($row['partner'])
                             <div class="flex items-center gap-2">
-                                <button type="button" wire:click="showStatement({{ $row['partner']->id }})" class="ghost-button" title="عرض كشف الحركات">الحركات</button>
+                                <a href="{{ route('statements.show', ['partner' => $row['partner'], 'from' => $dateFrom, 'to' => $dateTo]) }}" class="ghost-button" title="عرض كشف الحساب">كشف الحساب</a>
                             <form method="POST" action="{{ route('telegram.send-ledger') }}" class="inline">
                                 @csrf
                                 <input type="hidden" name="partner_id" value="{{ $row['partner']->id }}">
@@ -161,5 +161,4 @@
         </table>
     </div>
     <div class="p-4">{{ ($tab === 'receivable' ? $receivable : $payable)->links() }}</div>
-    @if($statementPartner)<div class="modal-backdrop" wire:click.self="closeStatement"><section class="workspace-card financial-movement-modal" style="width:min(980px,100%)"><header><div><h2>حركات {{ $statementPartner->name }}</h2><small>كل فاتورة ودفعة ومرتجع مع الرصيد الناتج بعد الحركة.</small></div><button type="button" class="icon-button" wire:click="closeStatement">×</button></header><div class="table-shell"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>المرجع</th><th>الوصف</th><th>قيمة الحركة</th><th>المدفوع/المستلم</th><th>الرصيد بعد الحركة</th></tr></thead><tbody>@forelse($statementRows as $movement)<tr><td>{{ $movement['date']->format('Y-m-d') }}</td><td>{{ $movement['type'] }}</td><td>{{ $movement['reference'] }}</td><td>{{ $movement['description'] }}</td><td>{{ number_format($movement['charge'],2) }}</td><td>{{ number_format($movement['payment'],2) }}</td><td><strong>{{ number_format($movement['balance'],2) }}</strong></td></tr>@empty<tr><td colspan="7"><div class="empty-state">لا توجد حركات ضمن الفترة.</div></td></tr>@endforelse</tbody></table></div></section></div>@endif
 </div>

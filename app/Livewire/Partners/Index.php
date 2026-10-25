@@ -169,7 +169,7 @@ class Index extends Component
 
         // Prepare Telegram Message
         $msg = "📄 كشف حساب\n";
-        $msg .= 'الزبون/المورد: '.$partner->name."\n";
+        $msg .= 'السيد/المورد: '.$partner->name."\n";
         $msg .= 'من تاريخ: '.$this->statementFromDate."\n";
         $msg .= 'إلى تاريخ: '.$this->statementToDate."\n";
         $msg .= "------------------\n";
@@ -218,7 +218,7 @@ class Index extends Component
 
             return;
         }
-        $name = $partner->name ?? (($partner->type === 'customer' ? 'زبون' : 'مورد').' #'.$id);
+        $name = $partner->name ?? (($partner->type === 'customer' ? 'السيد' : 'مورد').' #'.$id);
         if ($partner->image && str_starts_with($partner->image, 'partners/')) {
             Storage::disk('public')->delete($partner->image);
         }

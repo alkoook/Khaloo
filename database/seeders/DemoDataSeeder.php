@@ -36,6 +36,6 @@ class DemoDataSeeder extends Seeder
         $quote=Quotation::query()->create(['number'=>'Q-'.now()->format('Ym').'-00001','partner_id'=>$customers[1]->id,'quotation_date'=>now()->toDateString(),'expires_at'=>now()->addDays(14)->toDateString(),'status'=>'sent','subtotal'=>310,'discount'=>10,'total'=>300,'notes'=>'عرض تجريبي جاهز للطباعة والتحويل.']);
         $quote->lines()->create(['product_id'=>$products[10]->id,'product_name'=>$products[10]->name,'quantity'=>2,'unit_price'=>155,'line_total'=>310]);
         InAppNotification::query()->create(['type'=>'stock_zero','title'=>'نفاد مخزون','message'=>'نفد مخزون '.$products[0]->name.' بالكامل.','severity'=>'danger','data'=>['product_id'=>$products[0]->id]]);
-        InAppNotification::query()->create(['type'=>'receivable_high','title'=>'ذمة تحتاج متابعة','message'=>'يوجد رصيد تجريبي مرتفع لعميل.','severity'=>'warning','data'=>['partner_id'=>$customers[0]->id]]);
+        InAppNotification::query()->create(['type'=>'receivable_high','title'=>'ذمة تحتاج متابعة','message'=>'يوجد رصيد تجريبي مرتفع للسيد.','severity'=>'warning','data'=>['partner_id'=>$customers[0]->id]]);
     }
 }

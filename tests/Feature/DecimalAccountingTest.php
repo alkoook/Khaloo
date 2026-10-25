@@ -77,10 +77,10 @@ test('decimal sale create edit return and receipt preserve quantity and historic
     expect($product->fresh()->quantity)->toBe('8.250')->and($sale->fresh()->lines()->sole()->purchase_price)->toBe('4.0000');
     $line = $sale->fresh()->lines()->sole();
     app(ReturnService::class)->processSalesReturn($sale->fresh(), '0.00', [$line->id => '0.500']);
-    expect($product->fresh()->quantity)->toBe('8.750')->and($line->fresh()->quantity)->toBe('1.250')
+    expect($product->fresh()->quantity)->toBe('8.750')->and($line->fresh()->quantity)->toBe('1.750')
         ->and(app(SalesAccountingService::class)->profitability($sale->fresh())['profit'])->toBe('9.50');
-    $this->get(route('invoices.sales.show', $sale))->assertOk()->assertSee('ربحية الفاتورة')->assertSee('1.25');
-    $this->get(route('invoices.receipt', $sale))->assertOk()->assertSee('1.25');
+    $this->get(route('invoices.sales.show', $sale))->assertOk()->assertSee('ربحية الفاتورة')->assertSee('1.75');
+    $this->get(route('invoices.receipt', $sale))->assertOk()->assertSee('1.75');
 });
 
 test('decimal purchase weighted average edit and cancellation preserve stock value', function () {
@@ -187,17 +187,17 @@ test('cash settlements expenses and current position do not move into the origin
     $this->travelBack();
 });
 
-test('editing cannot backdate a later cash payment into the original invoice date', function () {
+test('correcting the issue payment updates the original cash event while later payments keep their own dates', function () {
     $this->travelTo(now()->startOfDay()->subDays(2));
     $product = decimalProduct();
     $sale = decimalSale($product);
     $originalDate = now()->toDateString();
     $this->travel(2)->days();
     $lines = [['product_id' => $product->id, 'quantity' => '1.250', 'unit_price' => '10.00']];
-    expect(fn () => app(InvoiceService::class)->updateInvoice($sale, $lines, '1.00'))->toThrow(Exception::class);
-    expect($sale->fresh()->amount_paid)->toBe('0.00')->and($product->fresh()->quantity)->toBe('8.750');
+    app(InvoiceService::class)->updateInvoice($sale, $lines, '1.00');
+    expect($sale->fresh()->amount_paid)->toBe('1.00')->and($product->fresh()->quantity)->toBe('8.750');
     app(FinancialService::class)->recordSettlement($sale->partner_id, 'receivable', '1.00', now()->toDateString());
-    expect(app(FinancialStatusService::class)->summary($originalDate, $originalDate)['cash_inflows'])->toBe('0.00')
+    expect(app(FinancialStatusService::class)->summary($originalDate, $originalDate)['cash_inflows'])->toBe('1.00')
         ->and(app(FinancialStatusService::class)->summary(now()->toDateString(), now()->toDateString())['cash_inflows'])->toBe('1.00');
     $this->travelBack();
 });
@@ -211,8 +211,8 @@ test('fractional returns conserve every cent even after several very small retur
     $second = $service->processSalesReturn($sale->fresh(), '0.01', [$line->id => '0.002']);
     $third = $service->processSalesReturn($sale->fresh(), '0.00', [$line->id => '0.002']);
     expect(D::sum([$first->total, $second->total, $third->total]))->toBe('0.02')
-        ->and($sale->fresh()->subtotal)->toBe('0.00')->and($sale->fresh()->total)->toBe('0.00')
-        ->and($line->fresh()->quantity)->toBe('0.000')->and($product->fresh()->quantity)->toBe('0.006');
+        ->and($sale->fresh()->subtotal)->toBe('0.02')->and($sale->fresh()->total)->toBe('0.02')
+        ->and($line->fresh()->quantity)->toBe('0.006')->and($product->fresh()->quantity)->toBe('0.006');
 });
 
 test('cancelled sales exclude revenue cash and cogs and restore only merchandise stock', function () {
@@ -249,7 +249,7 @@ test('Arabic report filenames include actual filters and profit exports agree wi
     $filters = ['from' => now()->toDateString(), 'to' => now()->toDateString(), 'partner_id' => $sale->partner_id];
     $path = $service->export('profit', $filters);
     try {
-        expect(basename($path))->toContain('تقرير الأرباح', 'العميل عميل الأوزان', 'من تاريخ', 'إلى تاريخ')
+        expect(basename($path))->toContain('تقرير الأرباح', 'السيد عميل الأوزان', 'من تاريخ', 'إلى تاريخ')
             ->not->toMatch('/partner_id|customer_id|from_date|[A-Za-z]{2,}(?=\-)/');
         $sheet = IOFactory::load($path)->getActiveSheet();
         expect(D::scale($sheet->getCell('B6')->getValue()))->toBe('12.50')

@@ -22,7 +22,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>عرض سعر {{ $quotation->number }}</title>
-    @vite('resources/css/quotation-print.css')
+    @vite(['resources/css/quotation-print.css', 'resources/js/quotation.js'])
 </head>
 <body style="--quotation-font: {!! $printFont !!};">
     <div class="quotation-screen-actions no-print">
@@ -30,6 +30,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17h10v4H7zM5 17H3v-7h18v7h-2M17 12h1"/></svg>
             <span>طباعة عرض السعر</span>
         </button>
+        <a class="quotation-print-button" href="{{ route('quotations.thermal', $quotation) }}" target="_blank">طباعة حرارية</a>
+        <a class="quotation-print-button" href="{{ route('quotations.word', $quotation) }}">تنزيل Word</a>
+        <button type="button" class="quotation-print-button" data-filename="عرض-سعر-{{ $quotation->number }}.png" onclick="captureQuotation(this)">تنزيل صورة</button>
+        <form method="post" action="{{ route('quotations.telegram', $quotation) }}">@csrf<button class="quotation-print-button">إرسال إلى تيليغرام</button></form>
     </div>
 
     <main class="quotation-document">

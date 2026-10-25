@@ -28,7 +28,7 @@
 ['المخزون','▦',[['products.*','products.index','المنتجات'],['categories.*','categories.index','التصنيفات']]],
 ['المبيعات','▤',[['invoices.sales.index','invoices.sales.index','فواتير البيع'],['invoices.sales.create','invoices.sales.create','فاتورة بيع جديدة'],['invoices.returns.*','invoices.returns.index','مرتجعات المبيعات']]],
 ['المشتريات','▣',[['invoices.purchases.index','invoices.purchases.index','فواتير الشراء'],['invoices.purchases.create','invoices.purchases.create','فاتورة شراء جديدة']]],
-['الأطراف والحسابات','◉',[['partners.*','partners.index','العملاء والموردون'],['ledger.*','ledger.index','دفتر الحسابات'],['payments.*','payments.register','الدفعات والتسديدات'],['financial-status.*','financial-status.index','الوضع المالي']]],
+['الأطراف والحسابات','◉',[['partners.*','partners.index','السادة والموردون'],['ledger.*','ledger.index','دفتر الحسابات'],['payments.*','payments.register','الدفعات والتسديدات'],['financial-status.*','financial-status.index','الوضع المالي']]],
 ['المتابعة والقرار','◇',[['quotations.*','quotations.index','عروض الأسعار'],['reports.*','reports.index','التقارير'],['notifications.*','notifications.index','التنبيهات'],['expenses.*','expenses.index','المصاريف']]],
 ['النظام','⚙',[['settings.*','settings.index','الإعدادات'],['profile.*','profile.edit','الملف الشخصي']]],
 ]; @endphp

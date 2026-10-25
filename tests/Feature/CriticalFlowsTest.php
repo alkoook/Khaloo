@@ -41,7 +41,7 @@ test('later settlement and partial return produce one authoritative receivable',
     $balancePartner = app(FinancialService::class)->partnerBalancesQuery()->find($partner->id);
     expect(app(FinancialService::class)->receivable($balancePartner))->toBe('30.00')
         ->and($product->fresh()->quantity)->toBe('2.000')
-        ->and((float) $invoice->fresh()->total)->toBe(80.0);
+        ->and((float) $invoice->fresh()->total)->toBe(100.0);
 });
 
 test('cash refund is recorded and does not throw a missing column exception', function () {
@@ -151,7 +151,7 @@ test('thermal receipt renders dynamic company facts and the invoice number fallb
         ->assertSee('0932222981')
         ->assertSee($partner->name)
         ->assertSee('ريف دمشق - شارع الصاغة')
-        ->assertDontSee('0991234567')
+        ->assertSee('0991234567')
         ->assertSee('#'.$invoice->id)
         ->assertSee($invoice->created_at->format('Y-m-d H:i'));
 });

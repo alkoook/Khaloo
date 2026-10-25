@@ -12,7 +12,7 @@
                 <thead>
                     <tr style="background: var(--app-bg); border-bottom: 1px solid var(--app-border);">
                         <th class="px-6 py-4 font-semibold">رقم المرتجع</th>
-                        <th class="px-6 py-4 font-semibold">الزبون</th>
+                        <th class="px-6 py-4 font-semibold">السيد</th>
                         <th class="px-6 py-4 font-semibold">التاريخ</th>
                         <th class="px-6 py-4 font-semibold">قيمة المرتجع</th>
                         <th class="px-6 py-4 font-semibold">المبلغ المردود نقداً</th>

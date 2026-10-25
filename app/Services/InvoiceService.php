@@ -2,12 +2,11 @@
 
 namespace App\Services;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Invoice;
 use App\Models\InvoiceLine;
-use App\Models\LedgerSettlement;
 use App\Models\Product;
 use App\Support\Decimal as D;
-use Exception;
 use Illuminate\Support\Facades\DB;
 
 class InvoiceService
@@ -21,14 +20,6 @@ class InvoiceService
         }
         if ($invoice->isReturn()) {
             return 'لا يمكن تعديل فاتورة مرتجع مباشرة.';
-        }
-        if ($invoice->returns()->exists()) {
-            return 'لا يمكن تعديل الفاتورة لوجود مرتجعات مسجلة.';
-        }
-        if ($invoice->partner_id && LedgerSettlement::query()
-            ->where('partner_id', $invoice->partner_id)
-            ->whereDate('settlement_date', '>=', $invoice->created_at->toDateString())->exists()) {
-            return 'لا يمكن تعديل الفاتورة بعد وجود تسوية لاحقة للطرف.';
         }
         if ($invoice->isPurchase() && $invoice->purchaseFundingSource()->exists()) {
             return 'لا يمكن تعديل فاتورة شراء ممولة من جهة مال بعد تسجيل التمويل.';
@@ -57,17 +48,17 @@ class InvoiceService
     public function updateInvoice(Invoice $invoice, array $newLines, mixed $newAmountPaid, ?string $discountType = null, mixed $discountValue = null, array $additionalLines = [], mixed $deliveryAmount = 0): Invoice
     {
         if ($invoice->isReturn()) {
-            throw new Exception('لا يمكن تعديل فاتورة مرتجع مباشرة.');
+            throw new BusinessRuleException('لا يمكن تعديل فاتورة مرتجع مباشرة.');
         }
         $ids = array_map(fn (array $line) => (int) $line['product_id'], $newLines);
         if (count($ids) !== count(array_unique($ids))) {
-            throw new Exception('لا يمكن تكرار المنتج في الفاتورة.');
+            throw new BusinessRuleException('لا يمكن تكرار المنتج في الفاتورة.');
         }
         $newAmountPaid = D::scale($newAmountPaid);
         $calculation = $this->pricing->calculate($newLines, $discountType, $discountValue);
         $deliveryAmount = $invoice->isSale() ? D::scale($deliveryAmount) : '0.00';
         if (D::cmp($deliveryAmount, 0) < 0) {
-            throw new Exception('قيمة التوصيل غير صالحة.');
+            throw new BusinessRuleException('قيمة التوصيل غير صالحة.');
         }
         $normalizedAdditionalLines = [];
         foreach ($invoice->isSale() ? $additionalLines : [] as $line) {
@@ -75,7 +66,7 @@ class InvoiceService
             $quantity = D::quantity($line['quantity'] ?? 0);
             $unitAmount = D::scale($line['unit_amount'] ?? 0);
             if ($description === '' || D::cmp($quantity, 0) <= 0 || D::cmp($unitAmount, 0) < 0) {
-                throw new Exception('بيانات إحدى الخانات الإضافية غير صالحة.');
+                throw new BusinessRuleException('بيانات إحدى الخانات الإضافية غير صالحة.');
             }
             $normalizedAdditionalLines[] = [
                 'description' => $description,
@@ -88,30 +79,41 @@ class InvoiceService
         $additionalTotal = D::sum(array_column($normalizedAdditionalLines, 'row_total'));
         $payableTotal = D::sum([$calculation['total'], $deliveryAmount, $additionalTotal]);
         if (D::cmp($calculation['total'], 0) <= 0) {
-            throw new Exception('يجب أن يكون الإجمالي بعد الحسم أكبر من صفر.');
+            throw new BusinessRuleException('يجب أن يكون الإجمالي بعد الحسم أكبر من صفر.');
         }
-        if (D::cmp($newAmountPaid, 0) < 0 || D::cmp($newAmountPaid, $payableTotal) > 0) {
-            throw new Exception('المبلغ المدفوع يجب أن يكون بين صفر والإجمالي بعد الحسم.');
+        if (D::cmp($newAmountPaid, 0) < 0) {
+            throw new BusinessRuleException('المبلغ المدفوع لا يمكن أن يكون سالبًا.');
         }
 
         $updated = DB::transaction(function () use ($invoice, $calculation, $newAmountPaid, $normalizedAdditionalLines, $deliveryAmount, $additionalTotal, $payableTotal): Invoice {
             $lockedInvoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
             if ($reason = $this->editBlockReason($lockedInvoice)) {
-                throw new Exception($reason);
+                throw new BusinessRuleException($reason);
             }
 
-            if (! $lockedInvoice->created_at->isToday() && D::cmp($newAmountPaid, $lockedInvoice->amount_paid) !== 0) {
-                throw new Exception('لا يمكن تغيير دفعة إنشاء فاتورة سابقة؛ سجّل الدفع أو الاسترداد بتاريخ حدوثه من سجل الدفعات والتسويات.');
-            }
-            if (! $lockedInvoice->partner_id && D::cmp($newAmountPaid, $payableTotal) < 0) {
-                throw new Exception('لا يمكن ترك مبلغ متبقٍ على فاتورة نقدية بلا عميل أو مورد.');
+            if (! $lockedInvoice->partner_id && D::cmp($newAmountPaid, $payableTotal) !== 0) {
+                throw new BusinessRuleException('الفاتورة النقدية بلا سيد أو مورد يجب تسديدها بالكامل تمامًا.');
             }
 
             $oldLines = InvoiceLine::query()->where('invoice_id', $lockedInvoice->id)->lockForUpdate()->get();
+            $activeReturns = $lockedInvoice->isSale()
+                ? Invoice::query()->active()->where('type', Invoice::TYPE_RETURN)->where('original_invoice_id', $lockedInvoice->id)->lockForUpdate()->get()
+                : collect();
+            $returnLines = $activeReturns->isEmpty() ? collect() : InvoiceLine::query()
+                ->whereIn('invoice_id', $activeReturns->pluck('id')->all())->lockForUpdate()->get();
+            $returnedQuantities = $returnLines->groupBy('product_id')->map(fn ($lines): string => D::sum($lines->pluck('quantity'), 3));
+            $legacyReturnIds = $activeReturns->where('return_preserves_original', false)->pluck('id')->all();
+            $independentReturnedQuantities = $returnLines->whereNotIn('invoice_id', $legacyReturnIds)
+                ->groupBy('product_id')->map(fn ($lines): string => D::sum($lines->pluck('quantity'), 3));
+            $auditBefore = [
+                'invoice' => $lockedInvoice->only(['partner_id', 'subtotal', 'discount_type', 'discount_value', 'discount_amount', 'total', 'delivery_amount', 'additional_total', 'payable_total', 'initial_paid', 'amount_paid']),
+                'lines' => $oldLines->map->only(['product_id', 'product_name', 'quantity', 'unit_price', 'purchase_price', 'sale_price', 'line_total', 'discount_amount', 'net_line_total'])->all(),
+                'additional_lines' => $lockedInvoice->additionalLines()->get()->map->only(['description', 'quantity', 'unit_amount', 'row_total', 'source_note'])->all(),
+            ];
             $productIds = collect($calculation['lines'])->pluck('product_id')->merge($oldLines->pluck('product_id'))->filter()->unique();
             $products = Product::query()->whereIn('id', $productIds)->lockForUpdate()->get()->keyBy('id');
             if ($lockedInvoice->isPurchase() && InvoiceLine::query()->whereIn('product_id', $productIds)->where('invoice_id', '>', $lockedInvoice->id)->exists()) {
-                throw new Exception('لا يمكن تعديل فاتورة الشراء بعد وجود حركة مخزون لاحقة لأحد أصنافها.');
+                throw new BusinessRuleException('لا يمكن تعديل فاتورة الشراء بعد وجود حركة مخزون لاحقة لأحد أصنافها.');
             }
 
             $oldQuantities = $oldLines->groupBy('product_id')->map(fn ($lines) => D::sum($lines->pluck('quantity'), 3));
@@ -121,16 +123,22 @@ class InvoiceService
             foreach ($productIds as $productId) {
                 $product = $products->get($productId);
                 if (! $product) {
-                    throw new Exception('أحد المنتجات لم يعد موجودًا.');
+                    throw new BusinessRuleException('أحد المنتجات لم يعد موجودًا.');
                 }
                 $old = D::quantity($oldQuantities[$productId] ?? 0);
                 $new = D::quantity($newQuantities[$productId] ?? 0);
-                $stock = $lockedInvoice->isSale() ? D::sub(D::add($product->quantity, $old, 3), $new, 3) : D::add(D::sub($product->quantity, $old, 3), $new, 3);
+                $returned = D::quantity($returnedQuantities[$productId] ?? 0);
+                if ($lockedInvoice->isSale() && D::cmp($new, $returned) < 0) {
+                    throw new BusinessRuleException("لا يمكن تخفيض الكمية المباعة من «{$product->name}» إلى {$new} لأن هناك {$returned} وحدة مسجلة ضمن مرتجعات سابقة.");
+                }
+                $oldNet = D::sub($old, $independentReturnedQuantities[$productId] ?? 0, 3);
+                $newNet = D::sub($new, $returned, 3);
+                $stock = $lockedInvoice->isSale() ? D::sub(D::add($product->quantity, $oldNet, 3), $newNet, 3) : D::add(D::sub($product->quantity, $old, 3), $new, 3);
                 if (D::cmp($stock, 0) < 0) {
-                    throw new Exception("لا يمكن حفظ التعديل لأن مخزون «{$product->name}» لن يكون كافيًا.");
+                    throw new BusinessRuleException("لا يمكن حفظ التعديل لأن مخزون «{$product->name}» لن يكون كافيًا.");
                 }
                 if ($lockedInvoice->isSale() && D::cmp($new, 0) > 0 && $product->purchase_price === null) {
-                    throw new Exception("لا يمكن بيع «{$product->name}» دون تكلفة شراء موثوقة.");
+                    throw new BusinessRuleException("لا يمكن بيع «{$product->name}» دون تكلفة شراء موثوقة.");
                 }
                 $product->update(['quantity' => $stock]);
             }
@@ -168,6 +176,21 @@ class InvoiceService
                 'total' => $calculation['total'], 'delivery_amount' => $deliveryAmount,
                 'additional_total' => $additionalTotal, 'payable_total' => $lockedInvoice->isSale() ? $payableTotal : null,
                 'initial_paid' => $newAmountPaid, 'amount_paid' => $newAmountPaid,
+            ]);
+
+            if ($lockedInvoice->isSale() && $legacyReturnIds !== []) {
+                Invoice::query()->whereIn('id', $legacyReturnIds)->update(['return_preserves_original' => true]);
+            }
+
+            $lockedInvoice->audits()->create([
+                'event' => 'updated',
+                'user_id' => auth()->id(),
+                'old_values' => $auditBefore,
+                'new_values' => [
+                    'invoice' => $lockedInvoice->fresh()->only(['partner_id', 'subtotal', 'discount_type', 'discount_value', 'discount_amount', 'total', 'delivery_amount', 'additional_total', 'payable_total', 'initial_paid', 'amount_paid']),
+                    'lines' => $lockedInvoice->lines()->get()->map->only(['product_id', 'product_name', 'quantity', 'unit_price', 'purchase_price', 'sale_price', 'line_total', 'discount_amount', 'net_line_total'])->all(),
+                    'additional_lines' => $lockedInvoice->additionalLines()->get()->map->only(['description', 'quantity', 'unit_amount', 'row_total', 'source_note'])->all(),
+                ],
             ]);
 
             return $lockedInvoice->refresh()->load('lines', 'additionalLines');

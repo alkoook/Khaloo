@@ -21,9 +21,9 @@ class ReturnController extends Controller
         
         // Adjust the title logically for Sales Return
         $title = 'إشعار مردود مبيعات (مرتجع) - رقم #' . $invoice->id;
-        $partnerName = $invoice->partner ? $invoice->partner->name : 'زبون نقدي';
+        $partnerName = $invoice->partner ? $invoice->partner->name : 'السيد النقدي';
 
-        $templateProcessor->setValue('client_name', $title . ' | الزبون: ' . $partnerName);
+        $templateProcessor->setValue('client_name', $title . ' | السيد: ' . $partnerName);
         $templateProcessor->setValue('date', $invoice->created_at->format('Y-m-d H:i'));
 
         $rows = [];

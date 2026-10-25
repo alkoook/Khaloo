@@ -101,20 +101,21 @@ test('discounted partial and multiple returns use net line value', function () {
     $second = app(ReturnService::class)->processSalesReturn($invoice->fresh(), 27, [$line->id => 3]);
 
     expect((float) $first->total)->toBe(18.0)->and((float) $second->total)->toBe(27.0)
-        ->and((float) $invoice->fresh()->total)->toBe(45.0)->and($line->fresh()->quantity)->toBe('5.000')
-        ->and((float) $line->fresh()->net_line_total)->toBe(45.0)->and($product->fresh()->quantity)->toBe('5.000');
+        ->and((float) $invoice->fresh()->total)->toBe(90.0)->and($line->fresh()->quantity)->toBe('10.000')
+        ->and((float) $line->fresh()->net_line_total)->toBe(90.0)->and($product->fresh()->quantity)->toBe('5.000');
 });
 
-test('a later settlement does not recreate revenue and blocks unsafe invoice edits', function () {
+test('a later settlement does not recreate revenue and no longer blocks a consistent invoice correction', function () {
     ['category' => $category, 'customer' => $customer] = auditMasterData();
     $product = Product::query()->create(['category_id' => $category->id, 'name' => 'سلعة تسوية', 'quantity' => 10, 'purchase_price' => 4, 'sale_price' => 10]);
     $invoice = Invoice::query()->create(['partner_id' => $customer->id, 'type' => Invoice::TYPE_SALE, 'subtotal' => 100, 'total' => 100, 'initial_paid' => 40, 'amount_paid' => 40]);
     InvoiceLine::query()->create(['invoice_id' => $invoice->id, 'product_id' => $product->id, 'product_name' => $product->name, 'quantity' => 10, 'unit_price' => 10, 'purchase_price' => 4, 'line_total' => 100, 'net_line_total' => 100]);
     LedgerSettlement::query()->create(['partner_id' => $customer->id, 'amount' => 20, 'type' => LedgerSettlement::TYPE_INCOMING, 'settlement_date' => now()->toDateString()]);
 
-    expect(fn () => app(InvoiceService::class)->updateInvoice($invoice, [['product_id' => $product->id, 'quantity' => 10, 'unit_price' => 10]], 40, 'fixed', 5))
-        ->toThrow(Exception::class, 'تسوية لاحقة');
-    expect((float) Invoice::query()->sum('total'))->toBe(100.0);
+    app(InvoiceService::class)->updateInvoice($invoice, [['product_id' => $product->id, 'quantity' => 10, 'unit_price' => 10]], 40, 'fixed', 5);
+    expect((float) Invoice::query()->sum('total'))->toBe(95.0)
+        ->and((float) LedgerSettlement::query()->sum('amount'))->toBe(20.0)
+        ->and((float) $product->fresh()->quantity)->toBe(10.0);
 });
 
 test('unknown acquisition cost blocks sale and marks financial profit untrusted', function () {

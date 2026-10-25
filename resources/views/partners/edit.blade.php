@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'تعديل زبون/مورد')
+@section('title', 'تعديل السيد/المورد')
 
 @section('content')
     @livewire('partners.edit', ['partner' => $partner])

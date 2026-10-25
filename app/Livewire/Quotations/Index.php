@@ -96,6 +96,18 @@ class Index extends Component
             'notes' => ['nullable', 'string', 'max:4000'], 'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'exists:products,id'], 'lines.*.quantity' => ['required', 'numeric', 'decimal:0,3', 'gt:0'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+        ], [
+            'quotation_date.required' => 'حدد تاريخ عرض السعر.',
+            'quotation_date.date' => 'تاريخ عرض السعر غير صالح.',
+            'expires_at.date' => 'تاريخ انتهاء العرض غير صالح.',
+            'expires_at.after_or_equal' => 'تاريخ انتهاء العرض يجب ألا يسبق تاريخ إنشائه.',
+            'lines.required' => 'أضف مادة واحدة على الأقل إلى عرض السعر.',
+            'lines.min' => 'أضف مادة واحدة على الأقل إلى عرض السعر.',
+            'lines.*.quantity.required' => 'أدخل كمية المادة.',
+            'lines.*.quantity.numeric' => 'كمية المادة يجب أن تكون رقماً صالحاً.',
+            'lines.*.quantity.gt' => 'كمية المادة يجب أن تكون أكبر من صفر.',
+            'lines.*.unit_price.required' => 'أدخل سعر المادة.',
+            'lines.*.unit_price.numeric' => 'سعر المادة يجب أن يكون رقماً صالحاً.',
         ]);
         $validated['expires_at'] = filled($validated['expires_at'] ?? null) ? $validated['expires_at'] : null;
         $quotation = $this->editingId ? Quotation::query()->findOrFail($this->editingId) : null;
@@ -153,7 +165,15 @@ class Index extends Component
 
     public function convert(int $id, QuotationService $service): mixed
     {
-        $invoice = $service->convertToSale(Quotation::query()->findOrFail($id), D::scale($this->amountPaid));
+        try {
+            $invoice = $service->convertToSale(Quotation::query()->findOrFail($id), D::scale($this->amountPaid));
+        } catch (ValidationException $exception) {
+            foreach ($exception->errors() as $field => $messages) {
+                $this->addError($field, $messages[0]);
+            }
+
+            return null;
+        }
         session()->flash('success', 'تم تحويل العرض إلى فاتورة مبيعات بعد التحقق من المخزون.');
 
         return $this->redirectRoute('invoices.sales.show', $invoice, navigate: true);

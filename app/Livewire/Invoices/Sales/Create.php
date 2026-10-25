@@ -164,13 +164,8 @@ class Create extends Component
         $deliveryAmount = $this->hasDelivery ? D::scale($this->deliveryAmount) : '0.00';
         $additionalTotal = $this->additionalTotal;
         $customerTotal = D::sum([$pricing['total'], $deliveryAmount, $additionalTotal]);
-        if (D::cmp($paid, $customerTotal) > 0) {
-            $this->addError('amount_paid', 'المدفوع لا يمكن أن يتجاوز الإجمالي بعد الحسم.');
-
-            return null;
-        }
-        if (! $this->partner_id && D::cmp($paid, $customerTotal) < 0) {
-            $this->addError('partner_id', 'يجب اختيار عميل عند وجود مبلغ متبقٍ.');
+        if (! $this->partner_id && D::cmp($paid, $customerTotal) !== 0) {
+            $this->addError('partner_id', 'يجب اختيار السيد عند وجود دين أو دفعة زائدة؛ الفاتورة النقدية بلا سيد يجب تسديدها بالكامل تمامًا.');
 
             return null;
         }
@@ -229,7 +224,7 @@ class Create extends Component
         if ($invoice->partner_id) {
             app(AlertService::class)->evaluatePartners($invoice->partner_id);
         }
-        app(TelegramService::class)->sendInvoiceNotification('sale', $invoice->partner?->name ?? 'عميل نقدي', number_format($customerTotal, 2), number_format($paid, 2), D::format(D::sub($customerTotal, $paid)), (string) $invoice->id, $messageLines);
+        app(TelegramService::class)->sendInvoiceNotification('sale', $invoice->partner?->name ?? 'السيد النقدي', number_format($customerTotal, 2), number_format($paid, 2), D::format(D::sub($customerTotal, $paid)), (string) $invoice->id, $messageLines);
         session()->flash('success', 'تم إنشاء فاتورة البيع بنجاح.');
 
         return $this->redirectRoute('invoices.sales.show', $invoice, navigate: true);

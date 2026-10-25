@@ -7,6 +7,7 @@ use App\Services\AlertService;
 use App\Services\ExportFileService;
 use App\Services\InvoiceCancellationService;
 use App\Services\InvoiceService;
+use App\Support\Decimal;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -68,7 +69,7 @@ class Index extends Component
 
     public function printWord(int $id)
     {
-        $invoice = Invoice::with('lines', 'partner')->findOrFail($id);
+        $invoice = Invoice::with('lines', 'partner', 'settlements')->findOrFail($id);
 
         $templatePath = storage_path('app/public/templates/invoice.docx');
         if (! file_exists($templatePath)) {
@@ -82,7 +83,7 @@ class Index extends Component
         $templateProcessor->setValue('invoice_date', $invoice->created_at->format('Y-m-d'));
         $templateProcessor->setValue('invoice_id', $invoice->id);
         $templateProcessor->setValue('invoice_total', number_format((float) $invoice->total, 2));
-        $templateProcessor->setValue('amount_paid', number_format((float) $invoice->amount_paid, 2));
+        $templateProcessor->setValue('amount_paid', number_format((float) $invoice->effective_paid, 2));
         $templateProcessor->setValue('balance', number_format((float) $invoice->balance, 2));
 
         $rows = [];
@@ -92,7 +93,7 @@ class Index extends Component
                     'product_name' => $line->product_name ?? 'منتج',
                     'qty' => $line->quantity,
                     'price' => number_format((float) $line->unit_price, 2),
-                    'line_total' => \App\Support\Decimal::format($line->net_line_total ?? $line->line_total),
+                    'line_total' => Decimal::format($line->net_line_total ?? $line->line_total),
                 ];
             }
         }
@@ -116,7 +117,7 @@ class Index extends Component
     public function render()
     {
         $invoices = Invoice::query()
-            ->with('partner')
+            ->with('partner', 'settlements')
             ->where('type', Invoice::TYPE_PURCHASE)
             ->when($this->search, function ($q) {
                 $s = trim($this->search);

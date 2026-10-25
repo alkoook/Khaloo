@@ -36,7 +36,7 @@ class PartnerController extends Controller
         if ($partner->invoices_count > 0 || $partner->settlements_count > 0) {
             return back()->with('error', 'لا يمكن حذف الطرف لوجود سجل مالي مرتبط به.');
         }
-        $name = $partner->name ?? (($partner->type === 'customer' ? 'زبون' : 'مورد').' #'.$partner->id);
+        $name = $partner->name ?? (($partner->type === 'customer' ? 'السيد' : 'مورد').' #'.$partner->id);
         $partner->delete();
         app(TelegramService::class)->notifyDeleted('partner', $name);
 
@@ -74,7 +74,7 @@ class PartnerController extends Controller
 
         $partner = Partner::create($data);
 
-        app(TelegramService::class)->notifyCreated('partner', $partner->name ?? ($partner->type === 'customer' ? 'زبون' : 'مورد').' #'.$partner->id);
+        app(TelegramService::class)->notifyCreated('partner', $partner->name ?? ($partner->type === 'customer' ? 'السيد' : 'مورد').' #'.$partner->id);
 
         return redirect()->route('partners.index')->with('success', 'تم الإضافة.');
     }

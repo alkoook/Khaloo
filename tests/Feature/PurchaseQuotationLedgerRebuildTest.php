@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\FinancialService;
 use App\Services\QuotationService;
 use App\Services\TelegramService;
-use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
 test('purchase invoice modal creates only a product master and selects it', function () {
@@ -84,7 +83,8 @@ test('customer and supplier settlements reconcile through one service and reject
         ->and($financials->statementRows($customer)->last()['balance'])->toBe('50.00')
         ->and($financials->statementRows($supplier)->last()['balance'])->toBe('0.00');
 
-    expect(fn () => $financials->recordSettlement($customer->id, 'receivable', 51, now()->toDateString()))
-        ->toThrow(ValidationException::class);
-    expect(LedgerSettlement::query()->where('partner_id', $customer->id)->count())->toBe(1);
+    $financials->recordSettlement($customer->id, 'receivable', 51, now()->toDateString());
+    $customerRow = $financials->partnerBalancesQuery()->findOrFail($customer->id);
+    expect(LedgerSettlement::query()->where('partner_id', $customer->id)->count())->toBe(2)
+        ->and($financials->signedBalance($customerRow))->toBe('-1.00');
 });

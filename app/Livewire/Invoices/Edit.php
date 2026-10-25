@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Invoices;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Services\InvoicePricingService;
@@ -53,7 +54,12 @@ class Edit extends Component
     public function mount(Invoice $invoice, InvoiceService $invoiceService)
     {
         abort_unless(auth()->user()?->can('update', $invoice), 403);
-        abort_if($reason = $invoiceService->editBlockReason($invoice), 409, $reason);
+        if ($reason = $invoiceService->editBlockReason($invoice)) {
+            session()->flash('error', $reason);
+            $this->redirectRoute($invoice->isPurchase() ? 'invoices.purchases.show' : 'invoices.sales.show', $invoice, navigate: true);
+
+            return;
+        }
         $this->invoice = $invoice;
         $this->invoice->load('lines.product', 'additionalLines');
         $this->amountPaid = D::scale($invoice->amount_paid);
@@ -68,10 +74,14 @@ class Edit extends Component
             'source_note' => $line->source_note ?? '',
         ])->all() : [];
 
+        $legacyReturned = $invoice->isSale() ? $invoice->returns()->active()
+            ->where('return_preserves_original', false)->with('lines')->get()->flatMap->lines
+            ->groupBy('product_id')->map(fn ($lines): string => D::sum($lines->pluck('quantity'), 3)) : collect();
+
         foreach ($this->invoice->lines as $line) {
             $this->lines[] = [
                 'product_id' => $line->product_id,
-                'quantity' => $line->quantity,
+                'quantity' => D::add($line->quantity, $legacyReturned[$line->product_id] ?? 0, 3),
                 'unit_price' => $line->unit_price,
                 'sale_price' => $line->sale_price,
             ];
@@ -192,8 +202,8 @@ class Edit extends Component
 
             return redirect()->route($route, $this->invoice->id)->with('success', 'تم تعديل الفاتورة وتحديث المخزون بنجاح.');
 
-        } catch (\Exception $e) {
-            session()->flash('error', $e->getMessage());
+        } catch (BusinessRuleException $exception) {
+            session()->flash('error', $exception->getMessage());
         }
     }
 

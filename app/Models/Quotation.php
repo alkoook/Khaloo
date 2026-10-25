@@ -45,6 +45,6 @@ class Quotation extends Model
 
     public function getDisplayCustomerAttribute(): string
     {
-        return $this->partner?->name ?: ($this->customer_name ?: 'عميل نقدي');
+        return $this->partner?->name ?: ($this->customer_name ?: 'السيد النقدي');
     }
 }

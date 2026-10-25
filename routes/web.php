@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountStatementController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\CategoryController;
@@ -73,11 +74,17 @@ Route::middleware(['auth', EnsureWeeklyBackupReminder::class])->group(function (
     Route::post('/invoices/{invoice}/receipt/cut', [InvoiceController::class, 'cutReceipt'])->name('invoices.receipt.cut');
 
     Route::get('/ledger', App\Livewire\Ledger\Index::class)->name('ledger.index');
+    Route::get('/ledger/statements/{partner}', [AccountStatementController::class, 'show'])->name('statements.show');
+    Route::get('/ledger/statements/{partner}/thermal', [AccountStatementController::class, 'thermal'])->name('statements.thermal');
+    Route::post('/ledger/statements/{partner}/telegram', [AccountStatementController::class, 'telegram'])->name('statements.telegram');
     Route::get('/financial-status', FinancialStatus::class)->name('financial-status.index');
     Route::get('/expenses', App\Livewire\Expenses\Index::class)->name('expenses.index');
     Route::get('/payments/register', Register::class)->name('payments.register');
     Route::get('/quotations', App\Livewire\Quotations\Index::class)->name('quotations.index');
     Route::get('/quotations/{quotation}/print', [QuotationController::class, 'print'])->name('quotations.print');
+    Route::get('/quotations/{quotation}/thermal', [QuotationController::class, 'thermal'])->name('quotations.thermal');
+    Route::get('/quotations/{quotation}/word', [QuotationController::class, 'word'])->name('quotations.word');
+    Route::post('/quotations/{quotation}/telegram', [QuotationController::class, 'telegram'])->name('quotations.telegram');
     Route::get('/notifications', App\Livewire\Notifications\Index::class)->name('notifications.index');
     Route::post('/notifications/backup-reminder/{notification}/dismiss', function (InAppNotification $notification) {
         abort_unless($notification->type === 'backup_reminder', 404);

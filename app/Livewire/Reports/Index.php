@@ -38,7 +38,7 @@ class Index extends Component
         $export = ReportExport::query()->create([
             'user_id' => auth()->id(), 'kind' => 'statement', 'partner_id' => $partner->id,
             'filters' => ['from' => $from, 'to' => $to],
-            'title' => 'كشف حساب '.($partner->isCustomer() ? 'العميل ' : 'المورد ').$partner->name.' من '.($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم'),
+            'title' => 'كشف حساب '.($partner->isCustomer() ? 'السيد ' : 'المورد ').$partner->name.' من '.($from ?: 'بداية السجل').' إلى '.($to ?: 'اليوم'),
         ]);
         GenerateReportExport::dispatch($export->id)->onConnection('database')->afterCommit();
         session()->flash('success', 'أُضيف كشف الحساب إلى قائمة المعالجة.');

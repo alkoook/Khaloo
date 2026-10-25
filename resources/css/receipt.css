@@ -1248,3 +1248,63 @@ body.receipt-page {
         -webkit-print-color-adjust: exact;
     }
 }
+
+/* The physical roll remains 72/80mm; content keeps a real 2mm printer-safe area on both sides. */
+:root { --receipt-safe-margin: 2mm; --receipt-content-width: calc(var(--receipt-width) - (2 * var(--receipt-safe-margin))); }
+@media screen {
+    .receipt-preview__stage { width: var(--receipt-content-width); }
+    .receipt { width: var(--receipt-content-width); max-width: 100%; }
+}
+@media print {
+    html, body, body.receipt-page, .receipt-preview { width: var(--receipt-width) !important; max-width: var(--receipt-width) !important; overflow-x: hidden !important; }
+    .receipt { width: var(--receipt-content-width) !important; max-width: var(--receipt-content-width) !important; margin: 0 var(--receipt-safe-margin) !important; padding-left: 0 !important; padding-right: 0 !important; overflow: hidden !important; }
+    .receipt-header, .receipt-brand, .receipt-brand__copy, .receipt-facts, .receipt-customer, .receipt-items, .receipt-items table, .receipt-totals, .receipt-footer { max-width: 100% !important; }
+    .receipt-brand__logo { max-width: 11mm !important; object-fit: contain !important; }
+}
+
+/* Shared Khaloo thermal language: compact identity, thin rules and no card-like chrome. */
+.receipt {
+    padding-top: 1.8mm;
+    padding-bottom: 3mm;
+    border: 0;
+}
+.receipt-header { padding-bottom: 1.5mm; border-bottom: .35mm solid #111; }
+.receipt-brand { flex-direction: column; align-items: center; gap: .7mm; }
+.receipt-brand__logo { width: auto; height: auto; max-width: 16mm; max-height: 14mm; margin: 0; }
+.receipt-brand h1 { font-size: calc(16px * var(--receipt-font-scale, 1)); }
+.receipt-document-title { margin-top: .8mm; padding: 0; border: 0; font-size: calc(11px * var(--receipt-font-scale, 1)); }
+.receipt-brand__phones { display: flex; flex-direction: column; margin-top: .7mm; font-size: calc(8.5px * var(--receipt-font-scale, 1)); line-height: 1.3; }
+.receipt-facts { margin-top: 1.2mm; gap: 0 2mm; border-bottom: 1px dashed #888; }
+.receipt-fact-box { min-height: 0; padding: .8mm .5mm; border: 0; border-radius: 0; justify-content: flex-start; }
+.receipt-fact-value { text-align: right; font-size: calc(9px * var(--receipt-font-scale, 1)); }
+.receipt-customer { flex-wrap: wrap; min-height: 0; margin-top: 1mm; padding: 1mm .5mm; border: 0; border-bottom: 1px dashed #888; }
+.receipt-customer small { margin-inline-start: auto; font-size: calc(8.5px * var(--receipt-font-scale, 1)); }
+.receipt-items { margin-top: 1.7mm; }
+.receipt-section-label { display: none; }
+.receipt-items table { border: 0; }
+.receipt-items th { background: #f2f2f2; border-width: 0 0 1px; border-color: #111; }
+.receipt-items td { border-width: 0 0 1px; border-color: #aaa; }
+.receipt-totals { width: 76%; margin: 1.7mm 0 0 auto; border: 0; border-top: 1px solid #111; grid-template-columns: 1fr auto; }
+.receipt-totals span,
+.receipt-totals b,
+.receipt-totals strong { min-height: 0; padding: .8mm .5mm; border: 0; border-bottom: 1px dotted #aaa; }
+.receipt-totals b,
+.receipt-totals strong { border-right: 0; }
+.receipt-totals__grand span,
+.receipt-totals__grand strong { min-height: 0; border-top: 1px double #111; border-bottom: 1px double #111; background: #f2f2f2; }
+.receipt-footer__line { flex-wrap: wrap; white-space: normal; }
+@media print {
+    .receipt { padding-top: 1.8mm !important; padding-bottom: 0 !important; border: 0 !important; }
+    .receipt-brand { align-items: center !important; }
+    .receipt-fact-box,
+    .receipt-customer { border-width: 0 0 1px !important; border-style: dashed !important; border-color: #888 !important; }
+    .receipt-items table { border: 0 !important; }
+    .receipt-items th { border-width: 0 0 1px !important; }
+    .receipt-items td { border-width: 0 0 1px !important; border-color: #777 !important; }
+    .receipt-totals { width: 76% !important; border: 0 !important; border-top: 1px solid #111 !important; }
+    .receipt-totals span,
+    .receipt-totals b,
+    .receipt-totals strong { border-width: 0 0 1px !important; border-style: dotted !important; border-color: #777 !important; }
+    .receipt-totals__grand span,
+    .receipt-totals__grand strong { border-top: 1px double #111 !important; border-bottom: 1px double #111 !important; }
+}

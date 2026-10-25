@@ -1,10 +1,10 @@
 <div class="rounded-xl p-6 max-w-2xl" style="background: var(--app-card); border: 1px solid var(--app-border);">
-    <h2 class="text-xl font-semibold mb-4" style="color: var(--app-primary);">تعديل زبون / مورد</h2>
+    <h2 class="text-xl font-semibold mb-4" style="color: var(--app-primary);">تعديل السيد / المورد</h2>
     <form wire:submit.prevent="save" class="space-y-4">
         <div>
             <label class="block text-sm font-medium mb-1">النوع *</label>
             <select wire:model="type" class="rounded-lg border px-4 py-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
-                <option value="customer">زبون</option>
+                <option value="customer">السيد</option>
                 <option value="supplier">مورد</option>
             </select>
         </div>

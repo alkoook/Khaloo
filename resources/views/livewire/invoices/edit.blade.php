@@ -62,7 +62,7 @@
             </div>
             @if($invoice->isSale())
                 <div class="rounded-2xl border overflow-hidden" style="background: var(--app-card); border-color: var(--app-border);">
-                    <div class="p-6"><h2 class="text-lg font-semibold">خانات إضافية</h2><p class="text-sm mt-1 mb-4" style="color:var(--app-muted)">مبالغ مستردة من العميل ولا تؤثر في المخزون أو مبيعات المنتجات أو الربح.</p>
+                    <div class="p-6"><h2 class="text-lg font-semibold">خانات إضافية</h2><p class="text-sm mt-1 mb-4" style="color:var(--app-muted)">مبالغ مستردة من السيد ولا تؤثر في المخزون أو مبيعات المنتجات أو الربح.</p>
                         <div class="additional-lines">@foreach($additionalLines as $index=>$line)<article wire:key="edit-additional-{{ $index }}"><label>اسم الغرض<input wire:model.live="additionalLines.{{ $index }}.description"></label><label>الكمية<input type="number" min="0.001" step="0.001" wire:model.live="additionalLines.{{ $index }}.quantity"></label><label>المبلغ الإفرادي<input type="number" min="0" step="0.01" wire:model.live="additionalLines.{{ $index }}.unit_amount"></label><label>المصدر / ملاحظة<input wire:model="additionalLines.{{ $index }}.source_note"></label><b>{{ \App\Support\Decimal::format(\App\Support\Decimal::mul($line['quantity'] ?: 0, $line['unit_amount'] ?: 0)) }}</b><button type="button" class="icon-danger" wire:click="removeAdditionalLine({{ $index }})">×</button></article>@endforeach</div>
                         <button type="button" wire:click="addAdditionalLine" class="secondary-button">＋ إضافة خانة</button>
                     </div>
@@ -77,8 +77,8 @@
                     
                     <div>
                         <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">المبلغ المدفوع</label>
-                        <input type="number" step="0.01" wire:model="amountPaid" min="0" @readonly(!$invoice->created_at->isToday()) placeholder="غير مدفوع" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
-                        @if(!$invoice->created_at->isToday())<small>دفعة إنشاء الفاتورة محفوظة؛ سجّل الدفعات اللاحقة من سجل الدفعات بتاريخها الفعلي.</small>@endif
+                        <input type="number" step="0.01" wire:model="amountPaid" min="0" placeholder="غير مدفوع" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
+                        <small>هذا هو المبلغ المدفوع عند إنشاء الفاتورة. الدفعات اللاحقة تُصحح من سجل الدفعات.</small>
                         @error('amountPaid') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
                     <div><label class="block text-sm font-medium mb-1">نوع الحسم</label><select wire:model.live="discountType" class="w-full"><option value="fixed">مبلغ ثابت</option><option value="percentage">نسبة مئوية</option></select></div>

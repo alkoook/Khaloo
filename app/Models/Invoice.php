@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Invoice extends Model
 {
@@ -36,6 +37,7 @@ class Invoice extends Model
         'initial_paid',
         'amount_paid',
         'return_request_key',
+        'return_preserves_original',
         'status',
         'cancelled_at',
         'cancelled_by',
@@ -55,6 +57,7 @@ class Invoice extends Model
             'initial_paid' => 'decimal:2',
             'amount_paid' => 'decimal:2',
             'cancelled_at' => 'datetime',
+            'return_preserves_original' => 'boolean',
         ];
     }
 
@@ -105,6 +108,16 @@ class Invoice extends Model
         return $this->belongsTo(User::class, 'cancelled_by');
     }
 
+    public function settlements(): HasMany
+    {
+        return $this->hasMany(LedgerSettlement::class);
+    }
+
+    public function audits(): MorphMany
+    {
+        return $this->morphMany(AuditLog::class, 'auditable');
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_ACTIVE);
@@ -117,7 +130,23 @@ class Invoice extends Model
 
     public function getBalanceAttribute(): string
     {
-        return D::sub($this->collectibleTotal(), $this->amount_paid);
+        return D::sub($this->collectibleTotal(), $this->effective_paid);
+    }
+
+    public function getEffectivePaidAttribute(): string
+    {
+        if ($this->isReturn()) {
+            return D::scale($this->amount_paid);
+        }
+
+        $settlements = $this->relationLoaded('settlements') ? $this->settlements : $this->settlements()->get();
+        $positiveType = $this->isPurchase() ? LedgerSettlement::TYPE_OUTGOING : LedgerSettlement::TYPE_INCOMING;
+        $positive = D::sum($settlements->where('type', $positiveType)->pluck('amount'));
+        $negative = D::sum($settlements->where('type', $positiveType === LedgerSettlement::TYPE_INCOMING
+            ? LedgerSettlement::TYPE_OUTGOING
+            : LedgerSettlement::TYPE_INCOMING)->pluck('amount'));
+
+        return D::add($this->amount_paid, D::sub($positive, $negative));
     }
 
     public function collectibleTotal(): string

@@ -3,8 +3,8 @@
 @section('content')
 @php
     $typeLabel = $invoice->isSale() ? 'فاتورة مبيعات' : ($invoice->isPurchase() ? 'فاتورة مشتريات' : 'فاتورة مرتجع مبيعات');
-    $partyLabel = $invoice->isPurchase() ? 'المورد' : 'العميل';
-    $paymentLabel = $invoice->remaining <= 0 ? 'مدفوعة بالكامل' : ((float) $invoice->amount_paid > 0 ? 'مدفوعة جزئياً' : 'غير مدفوعة');
+    $partyLabel = $invoice->isPurchase() ? 'المورد' : 'السيد';
+    $paymentLabel = $invoice->remaining <= 0 ? 'مدفوعة بالكامل' : ((float) $invoice->effective_paid > 0 ? 'مدفوعة جزئياً' : 'غير مدفوعة');
     $companyName = (string) $settings->get('company_name', $settings->get('site_name', 'Khaloo'));
     $companyPhones = $settings->invoicePhones();
     $companyAddress = $settings->get('company_address');
@@ -14,7 +14,7 @@
 <div class="invoice-document">
     <nav class="invoice-document__toolbar" aria-label="إجراءات الفاتورة">
         @if(!$invoice->isCancelled())<a href="{{ route('invoices.receipt', $invoice) }}" target="_blank" class="print-button">طباعة / لقطة شاشة</a>@endif
-        @if($invoice->isSale() && !$invoice->isCancelled())<a href="{{ route('invoices.returns.create', ['invoice'=>$invoice->id]) }}" class="secondary-button">إرجاع أصناف</a>@if($invoice->returns->isEmpty())<a href="{{ route('invoices.edit', $invoice) }}" class="secondary-button">تعديل</a>@endif @endif
+        @if($invoice->isSale() && !$invoice->isCancelled())<a href="{{ route('invoices.returns.create', ['invoice'=>$invoice->id]) }}" class="secondary-button">إرجاع أصناف</a>@if($invoice->returns->isEmpty()) @if($editBlockReason)<button type="button" class="secondary-button" disabled title="{{ $editBlockReason }}">تعديل</button>@else<a href="{{ route('invoices.edit', $invoice) }}" class="secondary-button">تعديل</a>@endif @endif @endif
         @if($invoice->isPurchase())
             @can('update', $invoice)
                 @if($editBlockReason)<button type="button" class="secondary-button" disabled title="{{ $editBlockReason }}">تعديل</button>@else<a href="{{ route('invoices.edit', $invoice) }}" class="secondary-button">تعديل</a>@endif
@@ -29,7 +29,7 @@
         @endif
         <a href="{{ $invoice->isPurchase() ? route('invoices.purchases.index') : route('invoices.sales.index') }}" class="ghost-button">العودة</a>
     </nav>
-    @if($invoice->isPurchase() && ($editBlockReason || $cancellationBlockReason))<p class="field-error invoice-action-reason">{{ $editBlockReason ?: $cancellationBlockReason }}</p>@endif
+    @if(($invoice->isPurchase() && ($editBlockReason || $cancellationBlockReason)) || ($invoice->isSale() && $editBlockReason))<p class="field-error invoice-action-reason">{{ $invoice->isSale() ? $editBlockReason : ($editBlockReason ?: $cancellationBlockReason) }}</p>@endif
 
     <article class="invoice-sheet">
         @if($invoice->isCancelled())<div class="invoice-cancelled"><strong>هذه الفاتورة ملغاة</strong><span>{{ $invoice->cancellation_reason }}</span></div>@endif
@@ -66,7 +66,7 @@
                 @if((float)$invoice->delivery_amount > 0)<div><dt>التوصيل</dt><dd>{{ number_format((float)$invoice->delivery_amount,2) }} {{ $currency }}</dd></div>@endif
                 @if((float)$invoice->additional_total > 0)<div><dt>الخانات الإضافية</dt><dd>{{ number_format((float)$invoice->additional_total,2) }} {{ $currency }}</dd></div>@endif
                 <div class="grand"><dt>الإجمالي المطلوب</dt><dd>{{ number_format($invoice->collectibleTotal(),2) }} {{ $currency }}</dd></div>
-                @if((float)$invoice->amount_paid > 0)<div><dt>{{ $invoice->isReturn() ? 'المسترد نقداً' : 'المدفوع' }}</dt><dd>{{ number_format((float)$invoice->amount_paid,2) }} {{ $currency }}</dd></div>@endif
+                @if((float)$invoice->effective_paid > 0)<div><dt>{{ $invoice->isReturn() ? 'المسترد نقداً' : 'إجمالي المدفوع' }}</dt><dd>{{ number_format((float)$invoice->effective_paid,2) }} {{ $currency }}</dd></div>@endif
                 @if((float)$invoice->remaining > 0)<div><dt>{{ $invoice->isReturn() ? 'المخصوم من الذمة' : 'المتبقي' }}</dt><dd>{{ number_format((float)$invoice->remaining,2) }} {{ $currency }}</dd></div>@endif
             </dl>
         </footer>

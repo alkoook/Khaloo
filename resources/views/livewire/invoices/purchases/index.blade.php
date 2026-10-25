@@ -16,7 +16,7 @@
                 @endphp
                 <tr wire:key="purchase-{{ $invoice->id }}">
                     <td>{{ $invoice->id }}</td><td>{{ $invoice->partner?->name ?? 'مورد نقدي' }}</td>
-                    <td>{{ number_format((float)$invoice->total,2) }}</td><td>{{ number_format((float)$invoice->amount_paid,2) }}</td><td>{{ number_format($invoice->remaining,2) }}</td>
+                    <td>{{ number_format((float)$invoice->total,2) }}</td><td>{{ number_format((float)$invoice->effective_paid,2) }}</td><td>{{ number_format($invoice->remaining,2) }}</td>
                     <td><span class="badge {{ $invoice->isCancelled() ? 'badge-danger' : 'badge-success' }}">{{ $invoice->isCancelled() ? 'ملغاة' : 'نشطة' }}</span></td><td>{{ $invoice->created_at->format('Y-m-d') }}</td>
                     <td><div class="row-actions">
                         <a class="ghost-button" href="{{ route('invoices.purchases.show',$invoice) }}" wire:navigate>التفاصيل</a>

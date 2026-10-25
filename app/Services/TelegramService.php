@@ -157,6 +157,6 @@ class TelegramService
 
     private function entity(string $entity): string
     {
-        return ['category' => 'تصنيف', 'product' => 'منتج', 'partner' => 'زبون/مورد', 'invoice_sale' => 'فاتورة بيع', 'invoice_purchase' => 'فاتورة شراء', 'invoice_return' => 'مرتجع'][$entity] ?? $entity;
+        return ['category' => 'تصنيف', 'product' => 'منتج', 'partner' => 'السيد/المورد', 'invoice_sale' => 'فاتورة بيع', 'invoice_purchase' => 'فاتورة شراء', 'invoice_return' => 'مرتجع'][$entity] ?? $entity;
     }
 }
