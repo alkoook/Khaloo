@@ -4,14 +4,11 @@ namespace App\Livewire\Invoices\Purchases;
 
 use App\Models\Invoice;
 use App\Services\AlertService;
-use App\Services\ExportFileService;
 use App\Services\InvoiceCancellationService;
 use App\Services\InvoiceService;
-use App\Support\Decimal;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithPagination;
-use PhpOffice\PhpWord\TemplateProcessor;
 
 class Index extends Component
 {
@@ -65,53 +62,6 @@ class Index extends Component
         $this->cancellingId = null;
         $this->cancellationReason = '';
         $this->dispatch('flash', message: 'تم إلغاء فاتورة الشراء وعكس أثر المخزون مرة واحدة مع الاحتفاظ بسجلها.', type: 'success');
-    }
-
-    public function printWord(int $id)
-    {
-        $invoice = Invoice::with('lines', 'partner', 'settlements')->findOrFail($id);
-
-        $templatePath = storage_path('app/public/templates/invoice.docx');
-        if (! file_exists($templatePath)) {
-            $this->dispatch('flash', message: 'قالب الفاتورة غير موجود. يرجى إضافته في storage/app/public/templates/invoice.docx', type: 'error');
-
-            return;
-        }
-
-        $templateProcessor = new TemplateProcessor($templatePath);
-        $templateProcessor->setValue('partner_name', $invoice->partner->name ?? '');
-        $templateProcessor->setValue('invoice_date', $invoice->created_at->format('Y-m-d'));
-        $templateProcessor->setValue('invoice_id', $invoice->id);
-        $templateProcessor->setValue('invoice_total', number_format((float) $invoice->total, 2));
-        $templateProcessor->setValue('amount_paid', number_format((float) $invoice->effective_paid, 2));
-        $templateProcessor->setValue('balance', number_format((float) $invoice->balance, 2));
-
-        $rows = [];
-        if ($invoice->lines->count() > 0) {
-            foreach ($invoice->lines as $line) {
-                $rows[] = [
-                    'product_name' => $line->product_name ?? 'منتج',
-                    'qty' => $line->quantity,
-                    'price' => number_format((float) $line->unit_price, 2),
-                    'line_total' => Decimal::format($line->net_line_total ?? $line->line_total),
-                ];
-            }
-        }
-        if (count($rows) > 0) {
-            $templateProcessor->cloneRowAndSetValues('product_name', $rows);
-        } else {
-            $templateProcessor->cloneRow('product_name', 0);
-        }
-
-        $typeLabel = $invoice->isSale() ? 'بيع' : 'شراء';
-        $partnerName = str_replace(' ', '_', $invoice->partner->name ?? 'مجهول');
-        $invoiceDate = $invoice->created_at->format('Y-m-d');
-        $fileName = 'فاتورة_'.$typeLabel.'_'.$partnerName.'_'.$invoiceDate.'_'.$invoice->id.'.docx';
-        $outputPath = app(ExportFileService::class)->path($fileName);
-
-        $templateProcessor->saveAs($outputPath);
-
-        return response()->download($outputPath)->deleteFileAfterSend(true);
     }
 
     public function render()

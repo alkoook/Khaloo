@@ -13,7 +13,7 @@ class LedgerSettlement extends Model
     public const TYPE_OUTGOING = 'outgoing';
 
     protected $fillable = [
-        'partner_id', 'invoice_id', 'amount', 'type', 'payment_method', 'settlement_date', 'notes',
+        'partner_id', 'invoice_id', 'return_invoice_id', 'amount', 'type', 'payment_method', 'settlement_date', 'notes',
         'cancelled_at', 'cancelled_by', 'cancellation_reason',
     ];
 
@@ -39,6 +39,11 @@ class LedgerSettlement extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);
+    }
+
+    public function returnInvoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'return_invoice_id');
     }
 
     public function cancelledBy(): BelongsTo

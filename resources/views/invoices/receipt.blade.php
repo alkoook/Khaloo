@@ -158,7 +158,7 @@
                     class="receipt-fact-value"
                     dir="ltr"
                 >
-                    {{ $invoice->created_at->format('Y-m-d H:i') }}
+                    {{ $invoice->accountingDate()->format($invoice->isReturn() && $invoice->return_date ? 'Y-m-d' : 'Y-m-d H:i') }}
                 </div>
             </div>
 

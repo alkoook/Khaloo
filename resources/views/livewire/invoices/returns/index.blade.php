@@ -16,6 +16,7 @@
                         <th class="px-6 py-4 font-semibold">التاريخ</th>
                         <th class="px-6 py-4 font-semibold">قيمة المرتجع</th>
                         <th class="px-6 py-4 font-semibold">المبلغ المردود نقداً</th>
+                        <th class="px-6 py-4 font-semibold">الحالة</th>
                         <th class="px-6 py-4 font-semibold">الإجراءات</th>
                     </tr>
                 </thead>
@@ -24,9 +25,10 @@
                         <tr>
                             <td class="px-6 py-4">#{{ $return->id }}</td>
                             <td class="px-6 py-4">{{ $return->partner->name ?? '—' }}</td>
-                            <td class="px-6 py-4">{{ $return->created_at->format('Y-m-d') }}</td>
+                            <td class="px-6 py-4">{{ $return->accountingDate()->format('Y-m-d') }}</td>
                             <td class="px-6 py-4 font-bold">{{ number_format($return->total, 2) }}</td>
                             <td class="px-6 py-4 text-red-500 font-medium">{{ number_format($return->amount_paid, 2) }}</td>
+                            <td class="px-6 py-4"><span class="badge {{ $return->isCancelled() ? 'badge-danger' : 'badge-success' }}">{{ $return->isCancelled() ? 'ملغى' : 'نشط' }}</span></td>
                             <td class="px-6 py-4 flex gap-2">
                                 <a href="{{ route('invoices.receipt', $return) }}" target="_blank" class="print-button print-button-compact" title="طباعة المرتجع" aria-label="طباعة المرتجع">
                                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17h10v4H7zM5 17H3v-7h18v7h-2M17 12h1"/></svg>
@@ -34,14 +36,12 @@
                                 <a href="{{ route('invoices.sales.show', $return->id) }}" class="p-2 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" title="عرض">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                 </a>
-                                <a href="{{ route('invoices.returns.export', $return->id) }}" class="p-2 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" title="تحميل Word">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                </a>
+                                @if(!$return->isCancelled()) @can('update', $return)<a href="{{ route('invoices.returns.edit', $return) }}" class="secondary-button compact-button">تعديل المرتجع</a>@endcan @endif
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-6 py-10 text-center" style="color: var(--app-muted)">لا يوجد مرتجعات مسجلة حالياً.</td>
+                            <td colspan="7" class="px-6 py-10 text-center" style="color: var(--app-muted)">لا يوجد مرتجعات مسجلة حالياً.</td>
                         </tr>
                     @endforelse
                 </tbody>

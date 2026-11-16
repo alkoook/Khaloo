@@ -86,8 +86,8 @@ class FinancialStatusService
         $refunds = $this->settlements(Partner::TYPE_CUSTOMER, LedgerSettlement::TYPE_OUTGOING, $from, $to);
         $supplierPaid = $this->settlements(Partner::TYPE_SUPPLIER, LedgerSettlement::TYPE_OUTGOING, $from, $to);
         $supplierRefunds = $this->settlements(Partner::TYPE_SUPPLIER, LedgerSettlement::TYPE_INCOMING, $from, $to);
-        $anonymous = $this->sum($this->range(Invoice::query()->active()->where('type', Invoice::TYPE_RETURN)->whereNull('partner_id')
-            ->whereHas('originalInvoice', fn ($q) => $q->active()), 'created_at', $from, $to), 'amount_paid');
+        $anonymous = $this->sum(Invoice::query()->active()->where('type', Invoice::TYPE_RETURN)->whereNull('partner_id')
+            ->whereHas('originalInvoice', fn ($q) => $q->active())->returnAccountingPeriod($from, $to), 'amount_paid');
         $expenses = $this->sum($this->range(Expense::query(), 'date', $from, $to), 'amount');
         $cashIn = D::sum([$issue, $incoming, $supplierRefunds]);
         $cashOut = D::sum([$refunds, $anonymous, $purchaseCash, $supplierPaid, $expenses, $advances]);

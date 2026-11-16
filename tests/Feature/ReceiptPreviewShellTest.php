@@ -36,7 +36,7 @@ test('receipt preview shell stays outside the unchanged capture target', functio
     $previewStyles = file_get_contents(resource_path('css/receipt-preview.css'));
 
     expect($screenshotScript)->toContain("document.querySelector('.receipt')")
-        ->and($screenshotScript)->toContain('html2canvas(receipt')
+        ->and($screenshotScript)->toContain('downloadElementAsPng(receipt')
         ->and($previewStyles)->toContain('@media print')
         ->and($previewStyles)->toContain('.receipt-preview__ambient { display: none !important; }')
         ->and($previewStyles)->toContain('.receipt-preview__stage { display: contents !important; }')

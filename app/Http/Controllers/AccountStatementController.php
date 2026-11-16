@@ -15,11 +15,18 @@ use Illuminate\View\View;
 
 class AccountStatementController extends Controller
 {
-    public function show(Request $request, Partner $partner, FinancialService $financials): View
+    public function show(Request $request, Partner $partner, FinancialService $financials, SettingsService $settings): View
     {
         $filters = $this->filters($request);
 
-        return view('statements.show', $this->viewData($partner, $financials, $filters));
+        $data = $this->viewData($partner, $financials, $filters);
+        $safeName = mb_substr(trim((string) preg_replace('/[^\p{L}\p{N}_-]+/u', '-', $partner->name), '-_'), 0, 80);
+
+        return view('statements.show', $data + [
+            'settings' => $settings,
+            'screenshotFilename' => ($partner->isCustomer() ? 'كشف-حساب-السيد-' : 'كشف-حساب-المورد-')
+                .($safeName !== '' ? $safeName : $partner->id).'-'.now()->toDateString().'.png',
+        ]);
     }
 
     public function thermal(Request $request, Partner $partner, FinancialService $financials, SettingsService $settings, ThermalPrintSettings $thermalSettings): View

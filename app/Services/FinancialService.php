@@ -128,7 +128,7 @@ class FinancialService
                     $rows->push(['date' => $invoice->created_at, 'sort' => 20, 'category' => 'settlement', 'type' => $partner->isCustomer() ? 'دفعة من السيد' : 'دفعة للمورد', 'reference' => '#'.$invoice->id, 'description' => 'مدفوع عند إنشاء الفاتورة', 'charge' => '0.00', 'payment' => $invoice->initial_paid]);
                 }
                 foreach ($invoice->returns as $return) {
-                    $rows->push(['date' => $return->created_at, 'sort' => 30, 'category' => 'return', 'type' => 'مرتجع مبيعات', 'reference' => '#'.$return->id, 'description' => 'مرتجع من الفاتورة #'.$invoice->id, 'charge' => '0.00', 'payment' => $return->total]);
+                    $rows->push(['date' => $return->accountingDate(), 'sort' => 30, 'category' => 'return', 'type' => 'مرتجع مبيعات', 'reference' => '#'.$return->id, 'description' => 'مرتجع من الفاتورة #'.$invoice->id, 'charge' => '0.00', 'payment' => $return->total]);
                 }
             });
         LedgerSettlement::query()->where('partner_id', $partner->id)
@@ -257,8 +257,7 @@ class FinancialService
             $returns = Invoice::query()->active()->where('type', Invoice::TYPE_RETURN)
                 ->whereColumn('partner_id', 'partners.id')
                 ->whereHas('originalInvoice', fn ($q) => $q->active())
-                ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
-                ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
+                ->returnAccountingPeriod($from, $to)
                 ->selectRaw('COALESCE(SUM(total), 0)');
 
             return DB::query()->selectRaw('('.$sum->toSql().') - ('.$returns->toSql().')', [...$sum->getBindings(), ...$returns->getBindings()]);

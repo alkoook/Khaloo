@@ -102,6 +102,10 @@ class InvoiceService
             $returnLines = $activeReturns->isEmpty() ? collect() : InvoiceLine::query()
                 ->whereIn('invoice_id', $activeReturns->pluck('id')->all())->lockForUpdate()->get();
             $returnedQuantities = $returnLines->groupBy('product_id')->map(fn ($lines): string => D::sum($lines->pluck('quantity'), 3));
+            $returnedGrossValues = $returnLines->groupBy('product_id')->map(fn ($lines): string => D::sum($lines->pluck('line_total')));
+            $returnedNetValues = $returnLines->groupBy('product_id')->map(fn ($lines): string => D::sum(
+                $lines->map(fn ($line) => $line->net_line_total ?? $line->line_total)
+            ));
             $legacyReturnIds = $activeReturns->where('return_preserves_original', false)->pluck('id')->all();
             $independentReturnedQuantities = $returnLines->whereNotIn('invoice_id', $legacyReturnIds)
                 ->groupBy('product_id')->map(fn ($lines): string => D::sum($lines->pluck('quantity'), 3));
@@ -120,6 +124,8 @@ class InvoiceService
             $oldNetValues = $oldLines->groupBy('product_id')->map(fn ($lines) => D::sum($lines->map(fn ($line) => $line->net_line_total ?? $line->line_total)));
             $stockBefore = $products->map(fn ($product) => ['quantity' => $product->quantity, 'cost' => $product->purchase_price]);
             $newQuantities = collect($calculation['lines'])->groupBy('product_id')->map(fn ($lines) => D::sum(collect($lines)->pluck('quantity'), 3));
+            $newGrossValues = collect($calculation['lines'])->groupBy('product_id')->map(fn ($lines) => D::sum(collect($lines)->pluck('line_total')));
+            $newNetValues = collect($calculation['lines'])->groupBy('product_id')->map(fn ($lines) => D::sum(collect($lines)->pluck('net_line_total')));
             foreach ($productIds as $productId) {
                 $product = $products->get($productId);
                 if (! $product) {
@@ -130,6 +136,13 @@ class InvoiceService
                 $returned = D::quantity($returnedQuantities[$productId] ?? 0);
                 if ($lockedInvoice->isSale() && D::cmp($new, $returned) < 0) {
                     throw new BusinessRuleException("لا يمكن تخفيض الكمية المباعة من «{$product->name}» إلى {$new} لأن هناك {$returned} وحدة مسجلة ضمن مرتجعات سابقة.");
+                }
+                if ($lockedInvoice->isSale()
+                    && (D::cmp($newGrossValues[$productId] ?? 0, $returnedGrossValues[$productId] ?? 0) < 0
+                        || D::cmp($newNetValues[$productId] ?? 0, $returnedNetValues[$productId] ?? 0) < 0)) {
+                    throw new BusinessRuleException(
+                        "لا يمكن تخفيض قيمة مبيعات «{$product->name}» إلى أقل من قيمة المرتجعات النشطة المسجلة له."
+                    );
                 }
                 $oldNet = D::sub($old, $independentReturnedQuantities[$productId] ?? 0, 3);
                 $newNet = D::sub($new, $returned, 3);

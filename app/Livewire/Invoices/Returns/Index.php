@@ -13,10 +13,10 @@ class Index extends Component
     public function render()
     {
         $returns = Invoice::query()
-            ->active()
             ->with('partner')
             ->where('type', Invoice::TYPE_RETURN)
-            ->orderByDesc('created_at')
+            ->orderByRaw('COALESCE(return_date, DATE(created_at)) DESC')
+            ->orderByDesc('id')
             ->paginate(15);
 
         return view('livewire.invoices.returns.index', [

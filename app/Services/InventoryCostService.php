@@ -21,4 +21,33 @@ class InventoryCostService
         ) : null;
         $product->update(['quantity' => $newQuantity, 'purchase_price' => $newCost]);
     }
+
+    /** Reverse part of an earlier return using that return line's historical cost layer. */
+    public function removeRestoredSaleStock(Product $product, mixed $quantity, mixed $historicalCost): void
+    {
+        $quantity = D::quantity($quantity);
+        if (D::cmp($quantity, 0) <= 0) {
+            return;
+        }
+        if (D::cmp($product->quantity, $quantity) < 0) {
+            throw new \App\Exceptions\BusinessRuleException(
+                "لا يمكن تخفيض المرتجع لأن مخزون «{$product->name}» المتاح أقل من فرق الكمية المطلوب سحبه."
+            );
+        }
+
+        $newQuantity = D::sub($product->quantity, $quantity, 3);
+        $newCost = $product->purchase_price;
+        if (D::cmp($newQuantity, 0) > 0 && $product->purchase_price !== null && $historicalCost !== null) {
+            $remainingValue = D::of($product->quantity)->multipliedBy($product->purchase_price)
+                ->minus(D::of($quantity)->multipliedBy($historicalCost));
+            if ($remainingValue->isNegative()) {
+                throw new \App\Exceptions\BusinessRuleException(
+                    "لا يمكن تصحيح مرتجع «{$product->name}» لأن قيمة المخزون التاريخية لا تسمح بعكس هذه الكمية بأمان."
+                );
+            }
+            $newCost = D::div($remainingValue, $newQuantity, 4);
+        }
+
+        $product->update(['quantity' => $newQuantity, 'purchase_price' => $newCost]);
+    }
 }

@@ -75,7 +75,7 @@ test('the actual Livewire return form submits a partial return and redirects wit
     $return = Invoice::query()->where('type', Invoice::TYPE_RETURN)->sole();
     $component->assertRedirect(route('invoices.sales.show', $return));
     $component->call('saveReturn');
-    expect(session('success'))->toBe('تم إنشاء فاتورة المرتجع بنجاح.')
+    expect(session('success'))->toBe('تم إنشاء المرتجع بنجاح.')
         ->and(Invoice::query()->where('type', Invoice::TYPE_RETURN)->count())->toBe(1)
         ->and($return->total)->toBe('20.00')
         ->and($product->fresh()->quantity)->toBe('2.000');
@@ -115,18 +115,18 @@ test('return validation and business failures stay visible inside the Livewire f
         ->set('amountPaid', '')
         ->call('saveReturn')
         ->assertHasErrors(['amountPaid'])
-        ->assertSee('أدخل المبلغ المردود نقداً');
+        ->assertSee('أدخل المبلغ المردود نقدًا');
 
     Livewire::actingAs($user)->test(ReturnCreate::class, ['invoice' => $invoice])
         ->call('saveReturn')
         ->assertHasErrors(['return'])
-        ->assertSee('يجب تحديد كمية لمنتج واحد على الأقل');
+        ->assertSee('حدد كمية لمنتج واحد على الأقل');
 
     Livewire::actingAs($user)->test(ReturnCreate::class, ['invoice' => $invoice])
         ->set('returnQuantities.'.$line->id, '2.000')
         ->call('saveReturn')
         ->assertHasErrors(['return'])
-        ->assertSee('الكمية المتبقية القابلة للإرجاع');
+        ->assertSee('إجمالي المرتجعات سيتجاوز الكمية المباعة');
 });
 
 test('a later settlement does not block the actual Livewire return submission', function () {

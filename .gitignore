@@ -22,3 +22,6 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Local Edge QA browser profiles
+.edge-screenshot-qa*/

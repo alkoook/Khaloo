@@ -14,7 +14,14 @@
 <div class="invoice-document">
     <nav class="invoice-document__toolbar" aria-label="إجراءات الفاتورة">
         @if(!$invoice->isCancelled())<a href="{{ route('invoices.receipt', $invoice) }}" target="_blank" class="print-button">طباعة / لقطة شاشة</a>@endif
-        @if($invoice->isSale() && !$invoice->isCancelled())<a href="{{ route('invoices.returns.create', ['invoice'=>$invoice->id]) }}" class="secondary-button">إرجاع أصناف</a>@if($invoice->returns->isEmpty()) @if($editBlockReason)<button type="button" class="secondary-button" disabled title="{{ $editBlockReason }}">تعديل</button>@else<a href="{{ route('invoices.edit', $invoice) }}" class="secondary-button">تعديل</a>@endif @endif @endif
+        @if($invoice->isReturn() && !$invoice->isCancelled()) @can('update', $invoice)<a href="{{ route('invoices.returns.edit', $invoice) }}" class="secondary-button">تعديل المرتجع</a>@endcan @endif
+        @if($invoice->isReturn() && !$invoice->isCancelled()) @can('delete', $invoice)<details class="invoice-cancel-action"><summary class="danger-button">إلغاء المرتجع</summary><form method="post" action="{{ route('invoices.returns.cancel', $invoice) }}">@csrf<label>سبب الإلغاء<textarea name="cancellation_reason" minlength="5" maxlength="1000" required></textarea></label>@error('cancellation_reason')<small class="field-error">{{ $message }}</small>@enderror<button class="danger-button">تأكيد إلغاء المرتجع</button></form></details>@endcan @endif
+        @if($invoice->isSale() && !$invoice->isCancelled())
+            <a href="{{ route('invoices.returns.create', ['invoice'=>$invoice->id]) }}" class="secondary-button">إرجاع أصناف</a>
+            @can('update', $invoice)
+                @if($editBlockReason)<button type="button" class="secondary-button" disabled title="{{ $editBlockReason }}">تعديل</button>@else<a href="{{ route('invoices.edit', $invoice) }}" class="secondary-button">تعديل</a>@endif
+            @endcan
+        @endif
         @if($invoice->isPurchase())
             @can('update', $invoice)
                 @if($editBlockReason)<button type="button" class="secondary-button" disabled title="{{ $editBlockReason }}">تعديل</button>@else<a href="{{ route('invoices.edit', $invoice) }}" class="secondary-button">تعديل</a>@endif
@@ -38,7 +45,7 @@
                 @if($invoiceLogo)<img src="{{ Storage::url($invoiceLogo) }}" alt="شعار {{ $companyName }}">@else<span>{{ mb_substr($companyName,0,1) }}</span>@endif
                 <div><p>مستند مالي</p><h1>{{ $companyName }}</h1>@if(filled($companyAddress))<small>{{ $companyAddress }}</small>@endif @if($companyPhones)<small dir="ltr">{{ implode(' / ', $companyPhones) }}</small>@endif</div>
             </div>
-            <div class="invoice-title"><span>{{ $typeLabel }}</span><strong dir="ltr">#{{ $invoice->id }}</strong><small dir="ltr">{{ $invoice->created_at->format('Y-m-d H:i') }}</small><em>{{ $paymentLabel }}</em></div>
+            <div class="invoice-title"><span>{{ $typeLabel }}</span><strong dir="ltr">#{{ $invoice->id }}</strong><small dir="ltr">{{ $invoice->accountingDate()->format($invoice->isReturn() && $invoice->return_date ? 'Y-m-d' : 'Y-m-d H:i') }}</small><em>{{ $paymentLabel }}</em></div>
         </header>
 
         <section class="invoice-party-strip">

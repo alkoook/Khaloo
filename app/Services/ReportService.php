@@ -40,9 +40,10 @@ class ReportService
             $invoiceType = ['sales' => Invoice::TYPE_SALE, 'purchases' => Invoice::TYPE_PURCHASE, 'returns' => Invoice::TYPE_RETURN][$type];
             $query = Invoice::query()->active()->where('type', $invoiceType)
                 ->when($partner, fn ($q) => $q->where('partner_id', $partner))
-                ->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)))
-                ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
-                ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
+                ->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)));
+            $invoiceType === Invoice::TYPE_RETURN
+                ? $query->returnAccountingPeriod($from, $to)
+                : $query->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to));
             $stats = $query->selectRaw('COUNT(*) as aggregate_count, COALESCE(SUM(total), 0) as aggregate_total')->first();
             $count = (int) $stats->aggregate_count;
             $total = D::scale($stats->aggregate_total);
@@ -223,12 +224,12 @@ class ReportService
                         $i->remaining <= 0 ? 'مدفوعة بالكامل' : 'متبقي', $i->original_invoice_id, $event['delivery'], $i->isSale() ? $i->additional_total : '0.00'];
                 })->all()];
             })(),
-            'purchases', 'returns' => (function () use ($type, $partner, $category, $date) {
+            'purchases', 'returns' => (function () use ($type, $partner, $category, $date, $from, $to) {
                 $invoiceType = ['sales' => Invoice::TYPE_SALE, 'purchases' => Invoice::TYPE_PURCHASE, 'returns' => Invoice::TYPE_RETURN][$type];
                 $q = Invoice::query()->active()->with('partner', 'settlements')->withCount('lines')->where('type', $invoiceType)->when($partner, fn ($q) => $q->where('partner_id', $partner))->when($category, fn ($q) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $category)));
-                $date($q);
+                $type === 'returns' ? $q->returnAccountingPeriod($from, $to) : $date($q);
 
-                return [['رقم الفاتورة', 'نوع الفاتورة', 'التاريخ', 'الوقت', 'الطرف', 'الهاتف', 'عدد الأصناف', 'إجمالي الكميات', 'المجموع قبل الحسم', 'نوع الحسم', 'قيمة الحسم', 'الإجمالي بعد الحسم', 'المدفوع عند الإنشاء', 'إجمالي المدفوع', 'المتبقي', 'حالة الدفع', 'رقم الفاتورة الأصلية'], $q->withSum('lines', 'quantity')->get()->map(fn ($i) => [$i->id, $i->isSale() ? 'بيع' : ($i->isPurchase() ? 'شراء' : 'مرتجع'), $i->created_at->format('Y-m-d'), $i->created_at->format('H:i'), $i->partner?->name ?: 'نقدي', $i->partner?->phone, $i->lines_count, $i->lines_sum_quantity, $i->subtotal, $i->discount_type === 'percentage' ? 'نسبة مئوية' : ($i->discount_amount > 0 ? 'مبلغ ثابت' : 'بدون حسم'), $i->discount_amount, $i->total, $i->initial_paid, $i->effective_paid, $i->remaining, $i->remaining <= 0 ? 'مدفوعة بالكامل' : ($i->effective_paid > 0 ? 'مدفوعة جزئيًا' : 'غير مدفوعة'), $i->original_invoice_id])->all()];
+                return [['رقم الفاتورة', 'نوع الفاتورة', 'التاريخ', 'الوقت', 'الطرف', 'الهاتف', 'عدد الأصناف', 'إجمالي الكميات', 'المجموع قبل الحسم', 'نوع الحسم', 'قيمة الحسم', 'الإجمالي بعد الحسم', 'المدفوع عند الإنشاء', 'إجمالي المدفوع', 'المتبقي', 'حالة الدفع', 'رقم الفاتورة الأصلية'], $q->withSum('lines', 'quantity')->get()->map(fn ($i) => [$i->id, $i->isSale() ? 'بيع' : ($i->isPurchase() ? 'شراء' : 'مرتجع'), $i->accountingDate()->format('Y-m-d'), $i->isReturn() && $i->return_date ? '00:00' : $i->created_at->format('H:i'), $i->partner?->name ?: 'نقدي', $i->partner?->phone, $i->lines_count, $i->lines_sum_quantity, $i->subtotal, $i->discount_type === 'percentage' ? 'نسبة مئوية' : ($i->discount_amount > 0 ? 'مبلغ ثابت' : 'بدون حسم'), $i->discount_amount, $i->total, $i->initial_paid, $i->effective_paid, $i->remaining, $i->remaining <= 0 ? 'مدفوعة بالكامل' : ($i->effective_paid > 0 ? 'مدفوعة جزئيًا' : 'غير مدفوعة'), $i->original_invoice_id])->all()];
             })(),
             'inventory' => (function () use ($category) {
                 $q = Product::query()->with('category')->when($category, fn ($q) => $q->where('category_id', $category));
@@ -310,9 +311,11 @@ class ReportService
         $invoiceType = ['sales' => Invoice::TYPE_SALE, 'purchases' => Invoice::TYPE_PURCHASE, 'returns' => Invoice::TYPE_RETURN][$type];
         $query = Invoice::query()->active()->with(['partner', 'lines.product.category'])->where('type', $invoiceType)
             ->when($filters['partner_id'] ?? null, fn ($q, $id) => $q->where('partner_id', $id))
-            ->when($filters['category_id'] ?? null, fn ($q, $id) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $id)))
-            ->when($filters['from'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '>=', $date))
-            ->when($filters['to'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '<=', $date));
+            ->when($filters['category_id'] ?? null, fn ($q, $id) => $q->whereHas('lines.product', fn ($product) => $product->where('category_id', $id)));
+        $invoiceType === Invoice::TYPE_RETURN
+            ? $query->returnAccountingPeriod($filters['from'] ?? null, $filters['to'] ?? null)
+            : $query->when($filters['from'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '>=', $date))
+                ->when($filters['to'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '<=', $date));
         $invoices = $query->get();
         $categoryId = $filters['category_id'] ?? null;
         $rows = $invoices->flatMap(function ($invoice) use ($categoryId) {
@@ -322,7 +325,7 @@ class ReportService
             }
 
             return $lines->map(fn ($line) => [
-                $invoice->id, $invoice->created_at->format('Y-m-d H:i'), $invoice->partner?->name ?: 'نقدي',
+                $invoice->id, $invoice->accountingDate()->format('Y-m-d H:i'), $invoice->partner?->name ?: 'نقدي',
                 $line->product_name, $line->product?->category?->name, $line->quantity,
                 $line->unit_price, $line->purchase_price === null ? 'غير موثقة' : $line->purchase_price, $line->line_total,
                 $line->discount_amount, ($line->net_line_total ?? $line->line_total),
@@ -378,9 +381,8 @@ class ReportService
             $returns = Invoice::query()->active()->with('partner')->where('type', Invoice::TYPE_RETURN)->whereHas('originalInvoice', fn ($q) => $q->active())
                 ->when($filters['partner_id'] ?? null, fn ($q, $id) => $q->where('partner_id', $id))
                 ->when($filters['category_id'] ?? null, fn ($q, $id) => $q->whereHas('lines.product', fn ($p) => $p->where('category_id', $id)))
-                ->when($filters['from'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '>=', $date))
-                ->when($filters['to'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '<=', $date))->get()
-                ->map(fn ($return) => [$return->id, $return->original_invoice_id, $return->created_at->format('Y-m-d H:i'), $return->partner?->name ?: 'نقدي', $return->total, $return->amount_paid])->all();
+                ->returnAccountingPeriod($filters['from'] ?? null, $filters['to'] ?? null)->get()
+                ->map(fn ($return) => [$return->id, $return->original_invoice_id, $return->accountingDate()->format('Y-m-d'), $return->partner?->name ?: 'نقدي', $return->total, $return->amount_paid])->all();
             $returnSheet = $spreadsheet->createSheet();
             $returnSheet->setRightToLeft(true);
             $returnSheet->setTitle('مرتجعات المبيعات');

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/resources/css/app.css">
+    <script type="module" src="/resources/js/app.js"></script>
+</head>
+<body>
+    <button type="button" data-statement-screenshot data-screenshot-target="#customer-statement" data-filename="كشف-حساب-السيد-أحمد-2026-10-25.png"><span data-screenshot-label>لقطة شاشة</span></button>
+    <button type="button" data-statement-screenshot data-screenshot-target="#supplier-statement" data-filename="كشف-حساب-المورد-فلان-2026-10-25.png"><span data-screenshot-label>لقطة شاشة</span></button>
+
+    <article id="customer-statement" class="statement-document" dir="rtl">
+        <header class="statement-document__header"><div class="statement-document__brand"><img alt="شعار" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23254f9b'/%3E%3C/svg%3E"><div><small>متجر خلو</small><h2>كشف حساب السيد</h2></div></div><div class="statement-document__party"><strong>أحمد</strong></div></header>
+        <section class="statement-summary"><div><small>الرصيد الافتتاحي</small><strong>0.00</strong></div><div><small>إجمالي المدين</small><strong>100.00</strong></div><div><small>إجمالي الدائن</small><strong>25.00</strong></div><div><small>الرصيد الختامي</small><strong>75.00</strong></div></section>
+        <section class="statement-document__body"><div class="table-shell"><table><thead><tr><th>التاريخ</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody><tr><td>2026-10-25</td><td>فاتورة بيع <a data-screenshot-exclude>تعديل</a></td><td>100.00</td><td>0.00</td><td>100.00</td></tr><tr><td>2026-10-25</td><td>دفعة</td><td>0.00</td><td>25.00</td><td>75.00</td></tr></tbody><tfoot><tr><th colspan="2">الإجمالي</th><th>100.00</th><th>25.00</th><th>75.00</th></tr></tfoot></table></div></section>
+    </article>
+
+    <article id="supplier-statement" class="statement-document" dir="rtl">
+        <header class="statement-document__header"><div class="statement-document__brand"><img alt="شعار فاشل للاختبار" src="/missing-logo.png"><div><small>متجر خلو</small><h2>كشف حساب المورد</h2></div></div><div class="statement-document__party"><strong>فلان</strong></div></header>
+        <section class="statement-summary"><div><small>الرصيد الافتتاحي</small><strong>0.00</strong></div><div><small>إجمالي المدين</small><strong>9000.00</strong></div><div><small>إجمالي الدائن</small><strong>1000.00</strong></div><div><small>الرصيد الختامي</small><strong>8000.00</strong></div></section>
+        <section class="statement-document__body"><div class="table-shell"><table><thead><tr><th>التاريخ</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody id="long-rows"></tbody><tfoot><tr><th colspan="2">الإجمالي</th><th>9000.00</th><th>1000.00</th><th>8000.00</th></tr></tfoot></table></div></section>
+    </article>
+
+    <script>
+        const rows = document.getElementById('long-rows');
+        for (let index = 1; index <= 100; index += 1) {
+            rows.insertAdjacentHTML('beforeend', `<tr><td>2026-10-25</td><td>حركة مورد طويلة رقم ${index}</td><td>${index}.00</td><td>0.00</td><td>${index}.00</td></tr>`);
+        }
+
+        const results = [];
+        HTMLAnchorElement.prototype.click = function () {
+            if (!this.download) return;
+            const captureRoot = document.querySelector('.statement-document.is-capturing');
+            const expectedHeight = captureRoot?.scrollHeight || 0;
+            const image = new Image();
+            image.onload = () => {
+                results.push({ filename: this.download, png: this.href.startsWith('data:image/png'), imageHeight: image.naturalHeight, expectedHeight });
+                document.body.dataset.results = JSON.stringify(results);
+            };
+            image.src = this.href;
+        };
+
+        let successCount = 0;
+        window.addEventListener('flash', (event) => {
+            if (event.detail.type !== 'success') {
+                document.body.dataset.failure = event.detail.message;
+                return;
+            }
+            successCount += 1;
+            document.body.dataset.feedback = event.detail.message;
+            if (successCount === 1) setTimeout(() => document.querySelectorAll('[data-statement-screenshot]')[1].click(), 100);
+            if (successCount === 2) document.body.dataset.complete = 'true';
+        });
+
+        addEventListener('load', () => setTimeout(() => document.querySelector('[data-statement-screenshot]').click(), 500));
+    </script>
+</body>
+</html>

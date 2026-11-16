@@ -37,6 +37,8 @@ class Invoice extends Model
         'initial_paid',
         'amount_paid',
         'return_request_key',
+        'return_date',
+        'notes',
         'return_preserves_original',
         'status',
         'cancelled_at',
@@ -57,6 +59,7 @@ class Invoice extends Model
             'initial_paid' => 'decimal:2',
             'amount_paid' => 'decimal:2',
             'cancelled_at' => 'datetime',
+            'return_date' => 'date',
             'return_preserves_original' => 'boolean',
         ];
     }
@@ -113,6 +116,16 @@ class Invoice extends Model
         return $this->hasMany(LedgerSettlement::class);
     }
 
+    public function refundSettlements(): HasMany
+    {
+        return $this->hasMany(LedgerSettlement::class, 'return_invoice_id');
+    }
+
+    public function accountingDate()
+    {
+        return $this->isReturn() && $this->return_date ? $this->return_date : $this->created_at;
+    }
+
     public function audits(): MorphMany
     {
         return $this->morphMany(AuditLog::class, 'auditable');
@@ -121,6 +134,19 @@ class Invoice extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_ACTIVE);
+    }
+
+    public function scopeReturnAccountingPeriod(Builder $query, ?string $from = null, ?string $to = null): Builder
+    {
+        return $query
+            ->when($from, fn (Builder $query) => $query->where(function (Builder $query) use ($from): void {
+                $query->whereDate('return_date', '>=', $from)
+                    ->orWhere(fn (Builder $query) => $query->whereNull('return_date')->whereDate('created_at', '>=', $from));
+            }))
+            ->when($to, fn (Builder $query) => $query->where(function (Builder $query) use ($to): void {
+                $query->whereDate('return_date', '<=', $to)
+                    ->orWhere(fn (Builder $query) => $query->whereNull('return_date')->whereDate('created_at', '<=', $to));
+            }));
     }
 
     public function isCancelled(): bool

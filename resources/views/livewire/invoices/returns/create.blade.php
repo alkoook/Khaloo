@@ -1,88 +1,85 @@
-<div>
-    <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+<div class="return-editor-page">
+    <div class="page-heading">
         <div>
-            <h1 class="text-2xl font-bold" style="color: var(--app-text)">إضافة فاتورة مرتجع</h1>
-            <p class="text-sm mt-1" style="color: var(--app-muted)">قم بتسجيل مرتجعات المبيعات واسترجاعها للمخزون.</p>
+            <span class="eyebrow">مرتجعات المبيعات</span>
+            <h1>{{ $this->editing ? 'تعديل المرتجع #'.$returnInvoice->id : 'إضافة مرتجع مبيعات' }}</h1>
+            <p>{{ $this->editing ? 'يُطبّق التصحيح كفرق على المخزون والحساب، وتبقى فاتورة البيع الأصلية كما صدرت.' : 'سجّل الأصناف المرتجعة من دون تغيير فاتورة البيع الأصلية.' }}</p>
         </div>
-        <a href="{{ route('dashboard') }}" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-xl" style="background: var(--app-bg); color: var(--app-text); border-color: var(--app-border);">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="m15 18-6-6 6-6"/></svg>
-            عودة
-        </a>
+        <a href="{{ route('invoices.returns.index') }}" class="secondary-button">العودة إلى المرتجعات</a>
     </div>
 
     @if(!$invoice)
-        <div class="max-w-md p-6 rounded-2xl border" style="background: var(--app-card); border-color: var(--app-border);">
-            <h2 class="text-lg font-semibold mb-4" style="color: var(--app-text)">البحث عن فاتورة مبيعات</h2>
-            <form wire:submit="findInvoice($refs.searchInput.value)" class="flex gap-2">
-                <input type="number" x-ref="searchInput" placeholder="أدخل رقم الفاتورة..." required class="flex-1 px-4 py-2 rounded-xl text-sm border focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
-                <button type="submit" class="px-4 py-2 rounded-xl text-sm font-medium text-white" style="background: var(--app-primary);">بحث</button>
+        <section class="workspace-card return-search-card">
+            <h2>البحث عن فاتورة مبيعات</h2>
+            <form wire:submit="findInvoice($refs.searchInput.value)" class="return-search-form">
+                <input type="number" x-ref="searchInput" placeholder="أدخل رقم الفاتورة" required>
+                <button type="submit" class="primary-button">بحث</button>
             </form>
-        </div>
+        </section>
     @else
-        <form wire:submit="saveReturn" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 space-y-6">
-                <div class="rounded-2xl border overflow-hidden" style="background: var(--app-card); border-color: var(--app-border);">
-                    <div class="p-6 border-b" style="border-color: var(--app-border);">
-                        <h2 class="text-lg font-semibold" style="color: var(--app-text)">المنتجات القابلة للإرجاع (من فاتورة #{{ $invoice->id }})</h2>
+        <form wire:submit="saveReturn" class="return-editor-form">
+            <section class="workspace-card return-products-card">
+                <header class="return-section-heading">
+                    <div>
+                        <h2>المنتجات القابلة للإرجاع</h2>
+                        <p>فاتورة البيع الأصلية #{{ $invoice->id }} — {{ $invoice->partner->name ?? 'السيد النقدي' }}</p>
                     </div>
-                    <div class="overflow-x-auto">
-                        <table class="return-items-table w-full text-right">
-                            <thead><tr><th>المنتج</th><th>السعر الإفرادي</th><th>الكمية المباعة</th><th>الكمية المرتجعة سابقًا</th><th>الكمية المتاحة للإرجاع</th><th>كمية الإرجاع</th><th>إجمالي المرتجع</th></tr></thead>
-                            <tbody>
+                    @if($this->editing)<span class="status-pill">مرتجع #{{ $returnInvoice->id }}</span>@endif
+                </header>
+
+                <div class="return-table-shell">
+                    <table class="return-items-table">
+                        <colgroup>
+                            <col class="return-product-column">
+                            <col span="5" class="return-number-column">
+                            <col class="return-total-column">
+                        </colgroup>
+                        <thead><tr><th>المنتج</th><th>السعر الإفرادي</th><th>الكمية المباعة</th><th>الكمية المرتجعة سابقًا</th><th>الكمية المتاحة للإرجاع</th><th>كمية الإرجاع</th><th>إجمالي المرتجع</th></tr></thead>
+                        <tbody>
                         @foreach($lines as $line)
                             <tr wire:key="return-line-{{ $line['id'] }}">
-                                <td data-label="المنتج"><strong>{{ $line['product_name'] }}</strong></td>
-                                <td data-label="السعر الإفرادي">{{ number_format((float) $line['effective_unit_price'], 2) }}</td>
-                                <td data-label="الكمية المباعة">{{ \App\Support\Decimal::displayQuantity($line['sold_quantity']) }}</td>
-                                <td data-label="المرتجع سابقًا">{{ \App\Support\Decimal::displayQuantity($line['returned_quantity']) }}</td>
-                                <td data-label="المتاح">{{ \App\Support\Decimal::displayQuantity($line['available_quantity']) }}</td>
-                                <td data-label="كمية الإرجاع"><input aria-label="كمية إرجاع {{ $line['product_name'] }}" type="number" wire:model.live="returnQuantities.{{ $line['id'] }}" min="0" step="0.001" max="{{ $line['available_quantity'] }}" @disabled((float) $line['available_quantity'] <= 0)></td>
-                                <td data-label="إجمالي المرتجع"><strong>{{ number_format((float) \App\Support\Decimal::mul($line['effective_unit_price'], $returnQuantities[$line['id']] ?? 0), 2) }}</strong></td>
+                                <td data-label="المنتج" class="return-product-name"><strong>{{ $line['product_name'] }}</strong></td>
+                                <td data-label="السعر الإفرادي" class="return-numeric">{{ number_format((float) $line['effective_unit_price'], 2) }}</td>
+                                <td data-label="الكمية المباعة" class="return-numeric">{{ number_format((float) $line['sold_quantity'], 3) }}</td>
+                                <td data-label="الكمية المرتجعة سابقًا" class="return-numeric">{{ number_format((float) $line['returned_quantity'], 3) }}</td>
+                                <td data-label="الكمية المتاحة للإرجاع" class="return-numeric">{{ number_format((float) $line['available_quantity'], 3) }}</td>
+                                <td data-label="كمية الإرجاع" class="return-quantity-input"><input aria-label="كمية إرجاع {{ $line['product_name'] }}" type="number" wire:model.live="returnQuantities.{{ $line['id'] }}" min="0" step="0.001" max="{{ $line['available_quantity'] }}" @disabled((float) $line['available_quantity'] <= 0)></td>
+                                <td data-label="إجمالي المرتجع" class="return-numeric return-line-total"><strong>{{ number_format((float) \App\Support\Decimal::mul($line['effective_unit_price'], $returnQuantities[$line['id']] ?? 0), 2) }}</strong></td>
                             </tr>
                             @error("returnQuantities.{$line['id']}")<tr class="return-error-row"><td colspan="7"><p class="field-error" role="alert">{{ $message }}</p></td></tr>@enderror
                         @endforeach
-                            </tbody>
-                        </table>
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-            
-            <div class="space-y-6">
-                <div class="rounded-2xl border overflow-hidden" style="background: var(--app-card); border-color: var(--app-border);">
-                    <div class="p-6 space-y-5">
-                        <h2 class="text-lg font-semibold" style="color: var(--app-text)">تفاصيل المرتجع</h2>
-                        
-                        <div>
-                            <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">السيد</label>
-                            <div class="px-4 py-2.5 rounded-xl text-sm border" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
-                                {{ $invoice->partner->name ?? 'السيد النقدي' }}
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium mb-1" style="color: var(--app-text)">المبلغ المردود نقداً (إن وجد)</label>
-                            <input type="number" step="0.01" wire:model="amountPaid" min="0" placeholder="لا يوجد استرداد نقدي" class="w-full px-4 py-2.5 border rounded-xl text-sm focus:ring-2" style="background: var(--app-bg); border-color: var(--app-border); color: var(--app-text);">
-                            <p class="text-xs mt-1" style="color: var(--app-muted)">تُخصم قيمة المرتجع من الدين أولًا. لا تسجّل هنا إلا المبلغ الذي أُعيد نقدًا فعليًا للسيد.</p>
-                            @error('amountPaid')<p class="field-error mt-2" role="alert">{{ $message }}</p>@enderror
-                        </div>
-                        
-                        <div class="pt-4 border-t space-y-3" style="border-color: var(--app-border);">
-                            <div class="flex justify-between text-sm">
-                                <span style="color: var(--app-muted)">الإجمالي المرتجع:</span>
-                                <span class="font-medium" style="color: var(--app-text)">{{ number_format($this->returnTotal, 2) }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="p-4 border-t" style="background: var(--app-bg); border-color: var(--app-border);">
-                        <button type="submit" wire:loading.attr="disabled" wire:target="saveReturn" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-70" style="background: var(--app-primary);">
-                            <span wire:loading.remove wire:target="saveReturn">حفظ المرتجع</span>
-                            <span wire:loading wire:target="saveReturn">جارٍ حفظ المرتجع...</span>
-                        </button>
-                        @error('return')<p class="field-error mt-3" role="alert">{{ $message }}</p>@enderror
-                        @error('returnQuantities')<p class="field-error mt-3" role="alert">{{ $message }}</p>@enderror
-                    </div>
+            </section>
+
+            <section class="workspace-card return-details-card">
+                <div class="return-section-heading">
+                    <div><h2>تفاصيل المرتجع</h2><p>يوضح الملخص الفرق بين النقد المعاد وأثر المرتجع على رصيد السيد.</p></div>
                 </div>
+                <div class="return-details-grid">
+                    <label><span>السيد</span><input value="{{ $invoice->partner->name ?? 'السيد النقدي' }}" disabled></label>
+                    <label><span>تاريخ المرتجع</span><input type="date" wire:model="returnDate" min="{{ $invoice->created_at->toDateString() }}" max="{{ now()->toDateString() }}">@error('returnDate')<small class="field-error" role="alert">{{ $message }}</small>@enderror</label>
+                    <label><span>المبلغ الذي سيتم رده نقدًا</span><input type="number" step="0.01" wire:model.live="amountPaid" min="0" placeholder="0.00"><small>أدخل فقط النقد الذي سيخرج فعليًا من الصندوق.</small>@error('amountPaid')<small class="field-error" role="alert">{{ $message }}</small>@enderror</label>
+                    <label class="return-notes"><span>ملاحظات</span><textarea wire:model="notes" rows="3" placeholder="ملاحظة اختيارية عن سبب المرتجع أو التصحيح"></textarea>@error('notes')<small class="field-error" role="alert">{{ $message }}</small>@enderror</label>
+                </div>
+
+                <dl class="return-financial-summary">
+                    <div><dt>قيمة المرتجع</dt><dd>{{ number_format((float) $this->returnTotal, 2) }}</dd></div>
+                    <div><dt>المردود نقدًا</dt><dd>{{ number_format((float) ($amountPaid ?: 0), 2) }}</dd></div>
+                    <div class="return-credit-effect"><dt>المبلغ المخصوم من رصيد السيد</dt><dd>{{ number_format((float) $this->accountCredit, 2) }}</dd></div>
+                </dl>
+            </section>
+
+            <div class="return-actions">
+                <div>
+                    @error('return')<p class="field-error" role="alert">{{ $message }}</p>@enderror
+                    @error('returnQuantities')<p class="field-error" role="alert">{{ $message }}</p>@enderror
+                </div>
+                <button type="submit" wire:loading.attr="disabled" wire:target="saveReturn" class="primary-button return-save-button">
+                    <span wire:loading.remove wire:target="saveReturn">{{ $this->editing ? 'حفظ التعديلات' : 'حفظ المرتجع' }}</span>
+                    <span wire:loading wire:target="saveReturn">{{ $this->editing ? 'جارٍ حفظ التعديلات...' : 'جارٍ حفظ المرتجع...' }}</span>
+                </button>
             </div>
         </form>
     @endif

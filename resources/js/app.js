@@ -1,4 +1,5 @@
 import './bootstrap';
+import { downloadElementAsPng } from './document-screenshot';
 
 const themes = ['obsidian-ruby', 'arctic-cobalt', 'marine-night'];
 const fonts = ['cairo', 'changa', 'reem-kufi', 'baloo'];
@@ -48,3 +49,41 @@ document.addEventListener('click', (event) => {
     event.preventDefault(); event.stopImmediatePropagation();
     window.dispatchEvent(new CustomEvent('khaloo-confirm', { detail: { message: button.getAttribute('data-confirm'), accept: () => { button.dataset.confirmed = '1'; button.click(); } } }));
 }, true);
+
+const statementScreenshot = async (button) => {
+    if (button.disabled) return;
+
+    const statement = document.querySelector(button.dataset.screenshotTarget || '#statement-document');
+    const label = button.querySelector('[data-screenshot-label]');
+    const originalLabel = label?.textContent;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    if (label) label.textContent = 'جارٍ إنشاء الصورة...';
+
+    try {
+        if (! statement) throw new Error('Statement screenshot target not found.');
+        statement.classList.add('is-capturing');
+        await downloadElementAsPng(statement, button.dataset.filename || 'statement.png');
+        window.dispatchEvent(new CustomEvent('flash', {
+            detail: { message: 'تم حفظ لقطة كشف الحساب بنجاح.', type: 'success' },
+        }));
+    } catch (error) {
+        console.error('Statement screenshot failed.', error);
+        window.dispatchEvent(new CustomEvent('flash', {
+            detail: { message: 'تعذر إنشاء لقطة كشف الحساب. حاول مرة أخرى.', type: 'error' },
+        }));
+    } finally {
+        statement?.classList.remove('is-capturing');
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        if (label) label.textContent = originalLabel;
+    }
+};
+
+document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-statement-screenshot]');
+    if (! button) return;
+
+    event.preventDefault();
+    statementScreenshot(button);
+});

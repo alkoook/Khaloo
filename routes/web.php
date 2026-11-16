@@ -67,7 +67,8 @@ Route::middleware(['auth', EnsureWeeklyBackupReminder::class])->group(function (
 
     Route::get('/invoices/returns', App\Livewire\Invoices\Returns\Index::class)->name('invoices.returns.index');
     Route::get('/invoices/returns/create/{invoice?}', Create::class)->name('invoices.returns.create');
-    Route::get('/invoices/returns/{invoice}/export', [ReturnController::class, 'exportWord'])->name('invoices.returns.export');
+    Route::get('/invoices/returns/{returnInvoice}/edit', Create::class)->name('invoices.returns.edit');
+    Route::post('/invoices/returns/{invoice}/cancel', [ReturnController::class, 'cancel'])->name('invoices.returns.cancel');
 
     Route::get('/invoices/{invoice}/edit', App\Livewire\Invoices\Edit::class)->name('invoices.edit');
     Route::get('/invoices/{invoice}/receipt', [InvoiceController::class, 'receipt'])->name('invoices.receipt');

@@ -42,8 +42,7 @@ class SalesAccountingService
             ->when($from || $to, fn ($q) => $q->where(function ($q) use ($from, $to) {
                 $q->where(fn ($q) => $q->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
                     ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to)))
-                    ->orWhereHas('returns', fn ($q) => $q->active()->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
-                        ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to)));
+                    ->orWhereHas('returns', fn ($q) => $q->active()->returnAccountingPeriod($from, $to));
             }))
             ->with(['partner', 'settlements', 'lines.product', 'returns' => fn ($q) => $q->active(), 'returns.lines.product'])->get();
         foreach ($sales as $sale) {
@@ -68,13 +67,13 @@ class SalesAccountingService
             }
             foreach ($sale->returns as $return) {
                 $lines = $selectLines($return->lines);
-                if (! $this->inPeriod($return->created_at->toDateString(), $from, $to) || ($categoryId && $lines->isEmpty())) {
+                if (! $this->inPeriod($return->accountingDate()->toDateString(), $from, $to) || ($categoryId && $lines->isEmpty())) {
                     continue;
                 }
                 $cost = $this->cost($lines);
                 $net = $categoryId ? D::sum($lines->map(fn ($line) => $line->net_line_total ?? $line->line_total)) : $return->total;
                 $returnSubtotal = D::sum($lines->pluck('line_total'));
-                $events->push(['invoice' => $return, 'date' => $return->created_at, 'merchandise' => D::sub(0, $net),
+                $events->push(['invoice' => $return, 'date' => $return->accountingDate(), 'merchandise' => D::sub(0, $net),
                     'delivery' => '0.00', 'cost' => D::sub(0, $cost['total'], 7), 'unknown' => $cost['unknown'],
                     'quantity' => D::sub(0, D::sum($lines->pluck('quantity'), 3), 3),
                     'subtotal' => D::sub(0, $returnSubtotal), 'discount' => D::sub(0, D::sub($returnSubtotal, $net)), 'line_count' => $lines->count()]);
